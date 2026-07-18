@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# pipeline outputs
+out/
+*.mid
+*.wav
+!tests/**/*.mid
+
+# model weights (multi-GB; live in the HF cache, never in the repo)
+*.safetensors
+*.onnx
+*.pt
+*.th
+*.ckpt
+
+# macOS
+.DS_Store

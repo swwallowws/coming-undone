@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stemscribe</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161a21; --panel2: #1c212a; --line: #262d38;
+    --fg: #e6e9ef; --dim: #98a1b0; --faint: #6b7484;
+    --accent: #6ee7b7; --accent-dim: #2b6d55;
+    --warn: #fbbf24; --err: #f87171;
+    --melody: #a78bfa; --bass: #60a5fa; --comping: #6ee7b7;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f7f8fa; --panel: #fff; --panel2: #f0f2f5; --line: #e2e6ec;
+      --fg: #11151b; --dim: #5b6472; --faint: #8b94a3;
+      --accent: #0f9d70; --accent-dim: #a7e8cf;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 32px 20px 80px; }
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  .ver { color: var(--faint); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .tagline { color: var(--dim); margin: 0 0 28px; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 18px; margin-bottom: 16px;
+  }
+
+  /* drop zone */
+  #drop {
+    border: 1.5px dashed var(--line); border-radius: 10px; padding: 34px 20px;
+    text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  #drop:hover, #drop.over { border-color: var(--accent); background: var(--panel2); }
+  #drop.has-file { border-style: solid; text-align: left; padding: 16px 18px; }
+  .drop-main { font-weight: 550; }
+  .drop-sub { color: var(--faint); font-size: 12.5px; margin-top: 4px; }
+  .filename { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent); }
+
+  /* controls */
+  .or {
+    display: flex; align-items: center; gap: 12px;
+    color: var(--faint); font-size: 12px; margin: 16px 0 10px;
+  }
+  .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .row { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+  button {
+    font: inherit; font-weight: 550; border-radius: 7px; border: 1px solid transparent;
+    padding: 9px 16px; cursor: pointer; transition: opacity .15s, background .15s;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .primary { background: var(--accent); color: #06251a; }
+  @media (prefers-color-scheme: light) { .primary { color: #fff; } }
+  .primary:hover:not(:disabled) { opacity: .88; }
+  .ghost { background: transparent; color: var(--dim); border-color: var(--line); }
+  .ghost:hover:not(:disabled) { color: var(--fg); border-color: var(--faint); }
+
+  details.adv { margin-top: 14px; }
+  details.adv > summary {
+    cursor: pointer; color: var(--dim); font-size: 13px; user-select: none;
+    padding: 6px 0; list-style: none;
+  }
+  details.adv > summary::-webkit-details-marker { display: none; }
+  details.adv > summary::before { content: "▸ "; color: var(--faint); }
+  details.adv[open] > summary::before { content: "▾ "; }
+  .adv-body {
+    padding: 14px; margin-top: 8px; background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 8px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px 18px; }
+  label.f { display: block; font-size: 12.5px; color: var(--dim); margin-bottom: 5px; }
+  input[type=text], input[type=number], select {
+    width: 100%; background: var(--bg); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; font: inherit;
+  }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .check input { accent-color: var(--accent); width: 15px; height: 15px; }
+  .hint { color: var(--faint); font-size: 11.5px; margin-top: 5px; }
+
+  /* progress */
+  #log {
+    font: 12.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+    max-height: 240px; overflow-y: auto; white-space: pre-wrap;
+  }
+  .stage { color: var(--accent); }
+  .stage.error { color: var(--err); }
+  .spin {
+    display: inline-block; width: 11px; height: 11px; margin-right: 8px;
+    border: 2px solid var(--accent-dim); border-top-color: var(--accent);
+    border-radius: 50%; animation: sp .7s linear infinite; vertical-align: -1px;
+  }
+  @keyframes sp { to { transform: rotate(360deg); } }
+
+  /* results */
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em;
+       color: var(--faint); margin: 0 0 12px; font-weight: 600; }
+  .tempo-hero { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .bpm { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; }
+  .bpm-unit { color: var(--faint); font-size: 13px; }
+  .pill {
+    font-size: 11px; padding: 2px 8px; border-radius: 99px;
+    background: var(--panel2); color: var(--dim); border: 1px solid var(--line);
+  }
+  .alts { margin-top: 14px; }
+  .alt-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .alt {
+    background: var(--panel2); border: 1px solid var(--line); color: var(--fg);
+    font: 12.5px ui-monospace, Menlo, monospace; padding: 6px 11px; border-radius: 6px;
+  }
+  .alt:hover { border-color: var(--accent); }
+  .alt.active { background: var(--accent); color: #06251a; border-color: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--faint); font-weight: 500; font-size: 11.5px;
+       text-transform: uppercase; letter-spacing: .05em; padding: 0 10px 8px 0; }
+  td { padding: 8px 10px 8px 0; border-top: 1px solid var(--line);
+       font-variant-numeric: tabular-nums; }
+  .tname { font-weight: 600; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; }
+
+  .stem-row { display: flex; align-items: center; gap: 12px; padding: 7px 0; }
+  .stem-name { width: 82px; font-size: 13px; color: var(--dim); flex-shrink: 0; }
+  audio { height: 32px; flex: 1; min-width: 0; }
+
+  .dl { display: flex; gap: 10px; flex-wrap: wrap; }
+  a.dlbtn {
+    text-decoration: none; background: var(--panel2); border: 1px solid var(--line);
+    color: var(--fg); padding: 9px 14px; border-radius: 7px; font-size: 13px; font-weight: 550;
+  }
+  a.dlbtn:hover { border-color: var(--accent); }
+  a.dlbtn.main { background: var(--accent); color: #06251a; border-color: var(--accent); }
+
+  .note { color: var(--faint); font-size: 12px; margin-top: 10px; }
+  .warn-box {
+    background: color-mix(in srgb, var(--warn) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+    color: var(--warn); border-radius: 7px; padding: 10px 12px;
+    font-size: 12.5px; margin-bottom: 12px;
+  }
+  .err-box {
+    background: color-mix(in srgb, var(--err) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--err) 35%, transparent);
+    color: var(--err); border-radius: 7px; padding: 12px;
+    font: 12.5px ui-monospace, Menlo, monospace; white-space: pre-wrap;
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>stemscribe</h1>
+    <span class="ver" id="ver"></span>
+  </header>
+  <p class="tagline">Song in, stems and labeled multi-track MIDI out.</p>
+
+  <!-- input -->
+  <div class="panel">
+    <div id="drop">
+      <div class="drop-main">Drop an audio file here, or click to choose</div>
+      <div class="drop-sub">mp3, wav, m4a, flac &middot; tempo is detected for you</div>
+    </div>
+    <input type="file" id="file" accept="audio/*,.mp3,.wav,.m4a,.flac,.aiff" class="hidden">
+
+    <div class="or"><span>or paste a link</span></div>
+    <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=...">
+    <div class="hint" id="url-hint">Audio is downloaded with yt-dlp. The source URL and title are recorded in manifest.json.</div>
+
+    <details class="adv">
+      <summary>Options</summary>
+      <div class="adv-body">
+        <div class="grid">
+          <div>
+            <label class="f" for="backend">Backend</label>
+            <select id="backend"></select>
+            <div class="hint" id="backend-hint"></div>
+          </div>
+          <div>
+            <label class="f" for="model">Separation model</label>
+            <select id="model">
+              <option value="htdemucs">htdemucs — drums / bass / other / vocals</option>
+              <option value="htdemucs_6s">htdemucs_6s — + guitar / piano</option>
+            </select>
+            <div class="hint" id="model-hint">4 stems. Guitars land in "other" with everything else.</div>
+          </div>
+          <div>
+            <label class="f" for="audiofmt">Downloaded audio</label>
+            <select id="audiofmt">
+              <option value="native">native codec (best quality)</option>
+              <option value="mp3">mp3 192k</option>
+            </select>
+            <div class="hint">Only applies to links. Native avoids a second lossy pass.</div>
+          </div>
+          <div>
+            <label class="f" for="tempo">Tempo</label>
+            <input type="number" id="tempo" placeholder="auto-detect" step="0.01" min="20" max="400">
+            <div class="hint">Leave empty. Only set this if you disagree with the detection.</div>
+          </div>
+          <div>
+            <label class="f" for="start">Start (s)</label>
+            <input type="number" id="start" placeholder="0" step="0.1" min="0">
+            <div class="hint">Whole song by default.</div>
+          </div>
+          <div>
+            <label class="f" for="duration">Duration (s)</label>
+            <input type="number" id="duration" placeholder="to end" step="0.1" min="0">
+            <div class="hint">Short values are good for quick iteration.</div>
+          </div>
+        </div>
+        <div class="grid" style="margin-top:16px">
+          <div class="check"><input type="checkbox" id="vocals" checked><label for="vocals">Vocals &rarr; melody track</label></div>
+          <div class="check"><input type="checkbox" id="cleanup" checked><label for="cleanup">Cleanup pass</label></div>
+          <div class="check"><input type="checkbox" id="deoverlap" checked><label for="deoverlap">De-overlap</label></div>
+          <div class="check"><input type="checkbox" id="trim" checked><label for="trim">Trim silence</label></div>
+          <div class="check"><input type="checkbox" id="strip" checked><label for="strip">Strip metadata</label></div>
+          <div class="check"><input type="checkbox" id="legato"><label for="legato">Legato (close small gaps)</label></div>
+          <div class="check"><input type="checkbox" id="monobass"><label for="monobass">Mono bass (strip overtones + bleed)</label></div>
+          <div class="check"><input type="checkbox" id="monovocals"><label for="monovocals">Mono melody (one voice)</label></div>
+        </div>
+        <div class="grid" style="margin-top:16px">
+          <div>
+            <label class="f" for="maxbeats">Duration cap (beats)</label>
+            <input type="number" id="maxbeats" value="2" step="0.5" min="0">
+          </div>
+          <div>
+            <label class="f" for="velfloor">Velocity floor</label>
+            <input type="number" id="velfloor" value="15" step="1" min="0" max="127">
+          </div>
+          <div>
+            <label class="f" for="legatogap">Legato max gap (beats)</label>
+            <input type="number" id="legatogap" value="0.25" step="0.25" min="0">
+            <div class="hint">Bigger gaps are treated as real rests and left alone.</div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <div class="row">
+      <button class="primary" id="go" disabled>Transcribe</button>
+      <button class="ghost hidden" id="again">New file</button>
+    </div>
+  </div>
+
+  <!-- progress -->
+  <div class="panel hidden" id="prog-panel">
+    <h2><span class="spin" id="spin"></span>Progress</h2>
+    <div id="log"></div>
+  </div>
+
+  <!-- error -->
+  <div class="panel hidden" id="err-panel">
+    <h2>Failed</h2>
+    <div class="err-box" id="err"></div>
+  </div>
+
+  <!-- results -->
+  <div id="results" class="hidden">
+    <div class="panel hidden" id="src-panel">
+      <h2>Source</h2>
+      <div id="src-title" style="font-weight:600"></div>
+      <div id="src-meta" style="color:var(--dim);font-size:12.5px;margin-top:3px"></div>
+      <div class="note">Recorded in manifest.json, so this output's provenance travels with it.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Tempo</h2>
+      <div class="tempo-hero">
+        <span class="bpm" id="bpm">–</span><span class="bpm-unit">BPM</span>
+        <span class="pill" id="tempo-src"></span>
+        <span class="pill" id="tempo-from"></span>
+      </div>
+      <div class="alts hidden" id="alts">
+        <div style="color:var(--dim);font-size:12.5px">
+          Beat trackers confuse half and double time. If the grid looks wrong, try one of these &mdash;
+          it re-stamps instantly and never moves a note.
+        </div>
+        <div class="alt-btns" id="alt-btns"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Tracks</h2>
+      <div id="warns"></div>
+      <table>
+        <thead><tr><th>Track</th><th>Notes</th><th>Median dur</th><th>Silence</th><th>Polyphony</th><th>Cleanup</th></tr></thead>
+        <tbody id="tracks"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Listen</h2>
+      <div id="players"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Download</h2>
+      <div class="dl" id="dl"></div>
+      <div class="note" id="timing-note"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const STEM_ORDER = ["vocals", "drums", "bass", "other"];
+const TRACK_COLOR = { melody: "var(--melody)", bass: "var(--bass)", comping: "var(--comping)" };
+let file = null, jobId = null;
+
+// ---- config
+fetch("/api/config").then(r => r.json()).then(c => {
+  $("ver").textContent = "v" + c.version;
+  const sel = $("backend");
+  c.backends.forEach(b => {
+    const o = document.createElement("option");
+    o.value = b.name;
+    o.textContent = b.name + (b.noncommercial ? "  (non-commercial)" : "");
+    sel.appendChild(o);
+  });
+  sel.value = "muscriptor";
+  $("model").onchange = () => {
+    const six = $("model").value === "htdemucs_6s";
+    $("model-hint").textContent = six
+      ? "6 stems. Guitar and piano get their own tracks — slower, and those two stems are experimental. Will not split two guitars from each other."
+      : '4 stems. Guitars land in "other" with everything else.';
+  };
+  sel.onchange = () => {
+    const b = c.backends.find(x => x.name === sel.value);
+    $("backend-hint").textContent = b && b.noncommercial
+      ? "CC-BY-NC weights — prototype only, never a commercial path."
+      : "Apache-2.0, commercial-safe.";
+    $("backend-hint").style.color = b && b.noncommercial ? "var(--warn)" : "var(--faint)";
+  };
+  sel.onchange();
+});
+
+// ---- file picking
+const drop = $("drop");
+drop.onclick = () => $("file").click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => {
+  e.preventDefault(); drop.classList.remove("over");
+  if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+};
+$("file").onchange = e => { if (e.target.files.length) setFile(e.target.files[0]); };
+
+function setFile(f) {
+  file = f;
+  $("url").value = "";           // a file and a URL are mutually exclusive
+  drop.classList.add("has-file");
+  const mb = (f.size / 1048576).toFixed(1);
+  drop.innerHTML = `<div class="drop-main"><span class="filename">${esc(f.name)}</span></div>
+                    <div class="drop-sub">${mb} MB — click to pick a different file</div>`;
+  refresh();
+}
+
+// URL and file are alternatives: typing a link clears a chosen file.
+$("url").oninput = () => {
+  if ($("url").value.trim()) {
+    file = null;
+    $("file").value = "";
+    drop.classList.remove("has-file");
+    drop.innerHTML = `<div class="drop-main">Drop an audio file here, or click to choose</div>
+                      <div class="drop-sub">mp3, wav, m4a, flac &middot; tempo is detected for you</div>`;
+  }
+  refresh();
+};
+
+function refresh() {
+  const u = $("url").value.trim();
+  const ok = !!file || /^https?:\/\/\S+$/i.test(u);
+  $("go").disabled = !ok;
+  $("go").textContent = (!file && u) ? "Fetch & transcribe" : "Transcribe";
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const numOr = (id, d) => $(id).value === "" ? d : parseFloat($(id).value);
+
+// ---- run
+$("go").onclick = async () => {
+  const url = $("url").value.trim();
+  if (!file && !url) return;
+  $("go").disabled = true;
+  $("results").classList.add("hidden");
+  $("err-panel").classList.add("hidden");
+  $("prog-panel").classList.remove("hidden");
+  $("spin").classList.remove("hidden");
+  $("log").textContent = "";
+
+  const fd = new FormData();
+  if (file) fd.append("file", file);
+  else fd.append("url", url);
+  fd.append("audio_format", $("audiofmt").value);
+  fd.append("backend", $("backend").value);
+  fd.append("demucs_model", $("model").value);
+  fd.append("legato", $("legato").checked);
+  fd.append("legato_max_gap_beats", numOr("legatogap", 0.25));
+  const mono = [];
+  if ($("monobass").checked) mono.push("bass");
+  if ($("monovocals").checked) mono.push("vocals");
+  fd.append("mono_stems", mono.join(","));
+  fd.append("include_vocals_melody", $("vocals").checked);
+  fd.append("cleanup", $("cleanup").checked);
+  fd.append("de_overlap", $("deoverlap").checked);
+  fd.append("trim_silence", $("trim").checked);
+  fd.append("strip_metadata", $("strip").checked);
+  fd.append("max_duration_beats", numOr("maxbeats", 2));
+  fd.append("velocity_floor", numOr("velfloor", 15));
+  if ($("tempo").value !== "") fd.append("tempo", $("tempo").value);
+  if ($("start").value !== "") fd.append("start", $("start").value);
+  if ($("duration").value !== "") fd.append("duration", $("duration").value);
+
+  let r;
+  try {
+    const resp = await fetch("/api/jobs", { method: "POST", body: fd });
+    r = await resp.json();
+    if (!resp.ok) return fail(r.detail || JSON.stringify(r));
+  } catch (e) { return fail("Could not reach the server: " + e); }
+  if (!r.id) return fail(JSON.stringify(r));
+  jobId = r.id;
+  listen(jobId);
+};
+
+function listen(id) {
+  const es = new EventSource(`/api/jobs/${id}/events`);
+  es.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.stage === "done") { es.close(); finish(id); return; }
+    if (d.stage === "error") { es.close(); fail(d.message); return; }
+    const line = document.createElement("div");
+    line.innerHTML = `<span class="stage">${esc(d.stage)}</span>  ${esc(d.message)}`;
+    $("log").appendChild(line);
+    $("log").scrollTop = $("log").scrollHeight;
+  };
+  es.onerror = () => es.close();
+}
+
+function fail(msg) {
+  $("spin").classList.add("hidden");
+  $("err-panel").classList.remove("hidden");
+  $("err").textContent = msg;
+  $("go").disabled = false;
+  $("again").classList.remove("hidden");
+}
+
+async function finish(id) {
+  const j = await (await fetch(`/api/jobs/${id}`)).json();
+  if (j.status !== "done") return fail(j.error || "job did not finish");
+  render(id, j.result);
+  $("spin").classList.add("hidden");
+  $("again").classList.remove("hidden");
+  $("results").classList.remove("hidden");
+}
+
+$("again").onclick = () => location.reload();
+
+function render(id, res) {
+  const url = p => `/api/jobs/${id}/files/${p}`;
+
+  // source (only for fetched audio)
+  const s = res.source;
+  if (s) {
+    $("src-panel").classList.remove("hidden");
+    $("src-title").textContent = s.title || s.url;
+    const bits = [];
+    if (s.uploader) bits.push(s.uploader);
+    if (s.duration) bits.push(`${Math.floor(s.duration / 60)}:${String(Math.round(s.duration % 60)).padStart(2, "0")}`);
+    if (s.ext) bits.push(s.ext);
+    $("src-meta").innerHTML = esc(bits.join(" · ")) +
+      ` — <a href="${esc(s.url)}" target="_blank" rel="noreferrer noopener" style="color:var(--dim)">link</a>`;
+  }
+
+  // tempo
+  const t = res.tempo || {};
+  $("bpm").textContent = (t.bpm ?? "–");
+  $("tempo-src").textContent = t.source === "detected" ? "detected" :
+                               t.source === "user" ? "you set this" : "fallback";
+  $("tempo-from").textContent = t.analyzed_stem ? `from ${t.analyzed_stem} stem` : "";
+  $("tempo-from").classList.toggle("hidden", !t.analyzed_stem);
+
+  const alts = (t.candidates || []).filter(c => c.ratio !== 1);
+  if (alts.length) {
+    $("alts").classList.remove("hidden");
+    const box = $("alt-btns"); box.innerHTML = "";
+    [{ bpm: t.bpm, ratio: 1 }, ...alts].forEach(c => {
+      const b = document.createElement("button");
+      b.className = "alt" + (c.ratio === 1 ? " active" : "");
+      b.textContent = `${c.bpm.toFixed(2)}${c.ratio === 0.5 ? "  ½×" : c.ratio === 2 ? "  2×" : c.ratio === 1 ? "" : `  ${c.ratio.toFixed(2)}×`}`;
+      b.onclick = async () => {
+        const fd = new FormData(); fd.append("bpm", c.bpm);
+        await fetch(`/api/jobs/${id}/tempo`, { method: "POST", body: fd });
+        $("bpm").textContent = c.bpm.toFixed(2);
+        $("tempo-src").textContent = "you set this";
+        [...box.children].forEach(x => x.classList.remove("active"));
+        b.classList.add("active");
+      };
+      box.appendChild(b);
+    });
+  }
+
+  // warnings
+  $("warns").innerHTML = (res.warnings || [])
+    .map(w => `<div class="warn-box">${esc(w)}</div>`).join("");
+
+  // tracks
+  const tb = $("tracks"); tb.innerHTML = "";
+  Object.keys(res.track_map).forEach(name => {
+    const s = res.tracks[name] || {};
+    const before = s.notes_before, after = s.notes_after;
+    const bits = [];
+    if (s.dropped_monophonic) bits.push(`${s.dropped_monophonic} mono`);
+    if (s.extended_legato) bits.push(`${s.extended_legato} legato`);
+    if (s.trimmed_de_overlap) bits.push(`${s.trimmed_de_overlap} de-lap`);
+    if (s.trimmed_duration_cap) bits.push(`${s.trimmed_duration_cap} capped`);
+    const cleanup = s.cleanup === "disabled" ? "off"
+      : bits.length ? `${before} → ${after} (${bits.join(", ")})` : "no change";
+    const pct = v => v != null ? (v * 100).toFixed(0) + "%" : "–";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="tname"><span class="dot" style="background:${TRACK_COLOR[name] || "var(--dim)"}"></span>${esc(name)}</td>
+      <td>${s.note_count ?? "–"}</td>
+      <td>${s.median_duration_after != null ? s.median_duration_after.toFixed(3) + "s" : "–"}</td>
+      <td>${pct(s.silence_ratio_after)}</td>
+      <td>${s.polyphony_after != null ? s.polyphony_after.toFixed(2) : "–"}</td>
+      <td style="color:var(--faint)">${esc(cleanup)}</td>`;
+    tb.appendChild(tr);
+  });
+
+  // players
+  const pl = $("players"); pl.innerHTML = "";
+  const add = (label, path) => {
+    if (!path) return;
+    const d = document.createElement("div");
+    d.className = "stem-row";
+    d.innerHTML = `<div class="stem-name">${esc(label)}</div>
+                   <audio controls preload="none" src="${url(path)}"></audio>`;
+    pl.appendChild(d);
+  };
+  add("instrumental", res.instrumental);
+  STEM_ORDER.forEach(s => add(s, (res.stems || {})[s]));
+
+  // downloads
+  const dl = $("dl"); dl.innerHTML = "";
+  const link = (label, path, main) => {
+    if (!path) return;
+    const a = document.createElement("a");
+    a.className = "dlbtn" + (main ? " main" : "");
+    a.href = url(path); a.download = ""; a.textContent = label;
+    dl.appendChild(a);
+  };
+  link("MIDI", res.midi, true);
+  link("Instrumental", res.instrumental);
+  link("manifest.json", res.manifest);
+
+  // timing note — the thing that is easy to get wrong downstream
+  const p = res.prepared || {};
+  $("timing-note").textContent = p.offset
+    ? `MIDI is on the original file's timeline: notes are shifted +${p.offset.toFixed(2)}s to match the audio you uploaded.`
+    : `MIDI note times match the uploaded audio exactly.`;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stemscribe"
+version = "0.1.0"
+description = "Song in, stems + multi-track MIDI out."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "demucs>=4.0",       # MIT
+    "basic-pitch>=0.4",  # Apache-2.0
+    "soundfile>=0.12",   # BSD
+    "pretty_midi>=0.2",  # MIT
+    "numpy>=1.24",
+    "torch>=2.0",
+]
+
+[project.optional-dependencies]
+# NON-COMMERCIAL. muscriptor's weights are CC-BY-NC (gated on Hugging Face).
+# Prototype/eval only -- never install this extra in a commercial path.
+muscriptor = ["muscriptor"]
+web = ["fastapi>=0.100", "uvicorn>=0.23", "python-multipart>=0.0.6"]
+# Fetch audio from a URL. yt-dlp is Unlicense (public domain).
+fetch = ["yt-dlp>=2024.1"]
+dev = ["pytest>=7", "httpx>=0.24"]
+
+[project.scripts]
+stemscribe = "stemscribe.cli:main"
+stemscribe-web = "stemscribe.web.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"stemscribe.web" = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
