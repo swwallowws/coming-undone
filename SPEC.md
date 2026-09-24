@@ -2,7 +2,7 @@
 
 A small Python library + CLI that takes an audio file (with or without vocals),
 separates it into stems, and transcribes it into a labeled multi-track MIDI.
-Extracted from the genre-bending project, which will import it as its
+Extracted from the genre-bending project (renamed rearranged on 2026-09-25), which will import it as its
 transcription front-end; useful standalone for any producer workflow.
 
 ## Why this exists (context)
@@ -79,11 +79,11 @@ stemscribe song.mp3 -o out/ --backend basic-pitch --no-vocals-melody --midi-only
 > the default because it transcribes better and is free for personal use. Since
 > the default is now non-commercial, the commercial path is protected by the
 > `STEMSCRIBE_COMMERCIAL=1` env var, which hard-fails any CC-BY-NC backend.
-> genre-bending's shipping build MUST set it (or pass `backend="basic-pitch"`).
+> rearranged's shipping build MUST set it (or pass `backend="basic-pitch"`).
 
 Registry design: `BACKENDS = {"basic-pitch": fn, "muscriptor": fn}` where each
 fn takes `(stem_wav_path, out_mid_path)` — copy the pattern from
-`~/Playground/genre-bending/test-harness/transcribe.py` (4-backend scaffold;
+`~/Playground/rearranged/test-harness/transcribe.py` (4-backend scaffold;
 Klangio/YourMT3+ can slot in later, do NOT build them now).
 
 Drums: pitched backends cannot transcribe drums — skip the drums stem with a
@@ -121,7 +121,7 @@ Make cleanup togglable and parameterized; defaults tuned on real material.
 - MuScriptor weights are ~2GB, downloaded on first run; slow. Cache is HF's.
 - mp3 in via ffmpeg/audioread is fine; don't require wav input.
 
-## Licenses (matters — genre-bending ships commercially later)
+## Licenses (matters — rearranged ships commercially later)
 
 demucs MIT ✅, basic-pitch Apache ✅, soundfile/pretty_midi ✅.
 MuScriptor = NC: keep it an optional extra (`pip install stemscribe[muscriptor]`
@@ -129,26 +129,26 @@ or just a documented optional dep), clearly marked non-commercial.
 
 ## Acceptance test
 
-Run on `~/Playground/genre-bending/inputs/koprualti.mp3`:
+Run on `~/Playground/rearranged/inputs/koprualti.mp3`:
 - 4 stems written, instrumental mix listenable, vocals absent from it
 - `song.mid` has ≥3 named tracks incl. "melody" (from vocals)
 - cleanup reduces median note duration on the "other" track vs raw
 - manifest sane (counts, params, timings)
-Compare (informally) with `~/Playground/genre-bending/phase0/koprualti_style.mid`
+Compare (informally) with `~/Playground/rearranged/phase0/koprualti_style.mid`
 — the new output should be at least as clean.
 
 ## Non-goals for v1 (extension points only)
 
 - Beat/downbeat grid (beat_this), chord labels (BTC/BACHI), section detection —
-  genre-bending's glue research covers these; leave hooks, don't build.
-- Melody identification inside instrumental tracks (skyline etc.) — genre-bending
+  rearranged's glue research covers these; leave hooks, don't build.
+- Melody identification inside instrumental tracks (skyline etc.) — rearranged
   keeps that logic; here melody comes only from the vocal stem.
 - Drum transcription.
 - GPU/ROCm tuning.
 
-## Integration note (for genre-bending, later)
+## Integration note (for rearranged, later)
 
-genre-bending will replace: its scratchpad `sep.py`, the ffmpeg clip-mixing
+rearranged will replace: its scratchpad `sep.py`, the ffmpeg clip-mixing
 commands, and its per-stem basic-pitch calls with `stemscribe.process()`.
-Section cutting (by seconds) stays in genre-bending — stemscribe processes
+Section cutting (by seconds) stays in rearranged — stemscribe processes
 whole songs.

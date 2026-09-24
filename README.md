@@ -4,7 +4,7 @@ Song in, stems + labeled multi-track MIDI out.
 
 Takes an audio file (with or without vocals), separates it into stems, and
 transcribes it into a multi-track MIDI with named tracks and GM programs.
-Built to be genre-bending's transcription front-end; useful standalone for any
+Built to be rearranged's transcription front-end; useful standalone for any
 producer workflow.
 
 ```
@@ -93,7 +93,7 @@ have none: `brew install deno`.
 Fetched audio lands in `out/source/` (`--no-keep-source` discards it), and the
 URL, title, uploader and duration go into `manifest.json` under `source`. That
 matters more than it looks: stemscribe hashes its input, but a hash tells you
-*which* file, never *whose*. Since genre-bending is meant to ship commercially,
+*which* file, never *whose*. Since rearranged is meant to ship commercially,
 being able to answer "where did this come from?" months later — for material
 that may be someone else's recording — is worth the two lines it costs. The same
 diligence that keeps MuScriptor's CC-BY-NC weights out of the commercial path
@@ -122,7 +122,7 @@ and writes your files. Don't expose it.
 | `manifest.json` | input hash, params, backend, per-track note counts, quantization-error stats, timings, warnings |
 
 Track names (`melody`, `bass`, `comping`) are the contract downstream consumers
-read — `melody` is always the vocal line. Renaming them breaks genre-bending.
+read — `melody` is always the vocal line. Renaming them breaks rearranged.
 
 ## Backends
 
@@ -138,7 +138,7 @@ free for personal / non-commercial use. Its weights are CC-BY-NC, so it must
 **Commercial safety.** Because the default is now the non-commercial backend,
 the "safe by default" property is gone. Set `STEMSCRIBE_COMMERCIAL=1` in the
 environment and stemscribe will *hard-fail* on any CC-BY-NC backend before doing
-any work, so a commercial build (genre-bending shipping, say) cannot land
+any work, so a commercial build (rearranged shipping, say) cannot land
 non-commercial weights by accident regardless of the default. Or just pass
 `backend="basic-pitch"` explicitly. `process()` also records the license in
 `manifest.json` and logs a warning whenever a non-commercial backend runs.
@@ -237,7 +237,7 @@ octave error is instant and lossless — see the web UI's alternates, or
 `POST /api/jobs/{id}/tempo`.
 
 Beat trackers confuse half and double time, so `res.tempo.candidates` carries
-the scored alternates. A full beat/downbeat grid is a non-goal (genre-bending's
+the scored alternates. A full beat/downbeat grid is a non-goal (rearranged's
 glue research owns it, via beat_this): `tempo.ESTIMATORS` is the registry where
 a better estimator drops in, exactly like `BACKENDS`.
 
@@ -254,7 +254,7 @@ dead air and the first note still reports at 4.2s — because in your file, it i
 
 `--start` / `--duration` are for fast iteration (a 20s section runs in ~14s vs
 ~150s for a full song). Note the spec assigns real section cutting to
-genre-bending; this is a convenience, not a takeover.
+rearranged; this is a convenience, not a takeover.
 
 ## Known gotchas (encoded here so you don't rediscover them)
 

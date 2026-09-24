@@ -5,7 +5,7 @@ Each fn writes ONE single-track-ish .mid for ONE stem, or returns None if it
 declines the stem. Never hand a backend the full mix -- that is what the stem
 separation is for.
 
-Shape follows genre-bending/test-harness/transcribe.py. Klangio and YourMT3+
+Shape follows rearranged/test-harness/transcribe.py. Klangio and YourMT3+
 slot in here later; they are intentionally not built yet.
 """
 from __future__ import annotations
@@ -114,7 +114,7 @@ def transcribe_drums(stem_wav: pathlib.Path, out_mid: pathlib.Path, **_):
 BACKENDS: dict[str, Callable[..., pathlib.Path | None]] = {
     "basic-pitch": transcribe_basic_pitch,  # Apache-2.0, commercial-safe
     "muscriptor": transcribe_muscriptor,    # DEFAULT: best quality, CC-BY-NC (non-commercial)
-    # "klangio": ...   # commercial API -- scaffold in genre-bending, not built
+    # "klangio": ...   # commercial API -- scaffold in rearranged, not built
     # "yourmt3": ...   # open self-host, GPLv3 -- not built
 }
 

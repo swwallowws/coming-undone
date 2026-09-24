@@ -7,7 +7,7 @@ import statistics
 import pretty_midi
 
 #: stem -> (track name, General MIDI program). The names are the contract
-#: genre-bending reads ("melody" is the vocal line it overlays), so do not
+#: rearranged reads ("melody" is the vocal line it overlays), so do not
 #: rename them casually.
 TRACK_SPEC: dict[str, tuple[str, int]] = {
     "vocals": ("melody", 53),  # GM 54 Voice Oohs

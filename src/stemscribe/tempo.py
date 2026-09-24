@@ -1,6 +1,6 @@
 """Tempo estimation.
 
-Scope note: a full beat/downbeat grid is a v1 non-goal (genre-bending's glue
+Scope note: a full beat/downbeat grid is a v1 non-goal (rearranged's glue
 research owns that, via beat_this). This module only produces the scalar BPM the
 MIDI needs, and does it behind a registry so a better estimator can replace it
 without touching the pipeline.
@@ -157,11 +157,11 @@ def estimate_beat_this(audio_path: str | pathlib.Path) -> TempoEstimate:
     """Hook for beat_this (ISMIR 2024), the current SOTA beat tracker.
 
     Deliberately not implemented: the spec assigns beat/downbeat tracking to
-    genre-bending's glue research. When that lands, implement here and register
+    rearranged's glue research. When that lands, implement here and register
     below -- or just pass tempo= into process() from the caller.
     """
     raise NotImplementedError(
-        "beat_this is genre-bending's glue research (v1 non-goal). "
+        "beat_this is rearranged's glue research (v1 non-goal). "
         "Pass tempo=<bpm> into process(), or register an estimator here."
     )
 

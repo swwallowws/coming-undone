@@ -71,7 +71,7 @@ def _json_default(o):
 def _jsonable(obj):
     """Recursively coerce a structure into plain JSON types.
 
-    Result.manifest is a public surface -- genre-bending reads it, and the web
+    Result.manifest is a public surface -- rearranged reads it, and the web
     UI hands it to a JSON serializer that does not know about _json_default. So
     the manifest has to be clean as a *data structure*, not merely writable by
     our own writer.
@@ -199,7 +199,7 @@ def process(
     if backend in _backends.NONCOMMERCIAL_BACKENDS:
         # Structural guard for the commercial path. The default is now muscriptor
         # (better quality, fine for personal/non-commercial use), so the old
-        # "safe by default" property is gone. genre-bending's shipping build sets
+        # "safe by default" property is gone. rearranged's shipping build sets
         # STEMSCRIBE_COMMERCIAL=1 and is then protected regardless of the default:
         # a CC-BY-NC backend hard-fails instead of silently landing in a product.
         if os.environ.get("STEMSCRIBE_COMMERCIAL", "").lower() in ("1", "true", "yes"):

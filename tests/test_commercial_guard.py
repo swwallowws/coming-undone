@@ -2,7 +2,7 @@
 
 The default backend is now muscriptor (CC-BY-NC), so "safe by default" is gone.
 STEMSCRIBE_COMMERCIAL=1 restores it structurally: a non-commercial backend then
-hard-fails before doing any work, so genre-bending's shipping build cannot land
+hard-fails before doing any work, so rearranged's shipping build cannot land
 CC-BY-NC weights in a product no matter what the default is.
 """
 import numpy as np
