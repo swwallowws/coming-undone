@@ -77,9 +77,10 @@ def quantization_error(
 ) -> dict:
     """How far off a fixed grid the onsets sit, in fractions of a grid step.
 
-    v1 has no beat tracker (explicit non-goal), so this assumes a constant
-    `tempo` starting at t=0 and is only meaningful as a relative signal --
-    a rough "is this track rhythmically legible" number, not ground truth.
+    This assumes a constant `tempo` starting at t=0 and runs before the grid
+    stage, so it is only meaningful as a relative signal -- a rough "is this
+    track rhythmically legible" number. The grid stage's per-track grid_fit_ms
+    in the manifest is the measured one.
     """
     if not inst.notes:
         return {"grid": f"1/{grid_division * 4}", "n": 0, "mean": 0.0, "median": 0.0}

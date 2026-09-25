@@ -1,9 +1,9 @@
 """Tempo estimation.
 
-Scope note: a full beat/downbeat grid is a v1 non-goal (rearranged's glue
-research owns that, via beat_this). This module only produces the scalar BPM the
-MIDI needs, and does it behind a registry so a better estimator can replace it
-without touching the pipeline.
+Scope note: this is only the starting guess. The grid stage (grid.py) refines it
+from the transcribed notes themselves and adds the bar lines; beat_this was 1.2% off
+on the reference song, so it is not used for the grid. This module sits behind a
+registry so a better estimator can replace it without touching the pipeline.
 
 Why the drums stem: demucs has already isolated it by the time we need a tempo,
 and beat tracking on isolated drums beats beat tracking on a dense mix. Falls

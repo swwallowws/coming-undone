@@ -28,10 +28,18 @@ audio in (mp3/wav/m4a)
   │                     bass  → bass track
   │                     other → harmony/comping track(s)
   │                     vocals → melody track (labeled "melody")
-  │                     drums → SKIPPED by pitched backends (see Backends)
+  │                     drums → drum backend (ADT_STR), or skipped without the extra
   └─ 4. cleanup       de-overlap + duration-trim pass (see Cleanup)
   └─ 5. merge         one multi-track MIDI, GM programs + named tracks
+  └─ 6. realign       back onto the original file's timeline
+  └─ 7. grid          tempo + bar lines fitted from the tightest track; optional snap
 ```
+
+> **Amended 2026-09-25 (scope change, approved):** stemscribe now owns the beat
+> grid and transcribes drums. Reason: rearranged is MIDI-only and copies a
+> donor's timing, so a donor without a real grid had to be repaired by hand. See
+> the README's "Beat grid" and "Drums" sections; the bake-off behind the design is
+> in rearranged/research/bakeoff/.
 
 ## API sketch
 
@@ -86,8 +94,9 @@ fn takes `(stem_wav_path, out_mid_path)` — copy the pattern from
 `~/Playground/rearranged/test-harness/transcribe.py` (4-backend scaffold;
 Klangio/YourMT3+ can slot in later, do NOT build them now).
 
-Drums: pitched backends cannot transcribe drums — skip the drums stem with a
-warning in the manifest. Leave a `transcribe_drums` extension point for later.
+Drums: pitched backends cannot transcribe drums. (Amended 2026-09-25: the drums
+stem goes to a separate drum backend registry, `DRUM_BACKENDS`, with ADT_STR;
+without the `[drums]` extra it is skipped with a warning, as before.)
 
 ## Cleanup pass (important, learned the hard way)
 
@@ -123,7 +132,8 @@ Make cleanup togglable and parameterized; defaults tuned on real material.
 
 ## Licenses (matters — rearranged ships commercially later)
 
-demucs MIT ✅, basic-pitch Apache ✅, soundfile/pretty_midi ✅.
+demucs code MIT, but **its weights are research-only** (corrected 2026-09-25, see
+the README's Licenses), basic-pitch Apache ✅, soundfile/pretty_midi ✅, ADT_STR CC BY-SA 4.0.
 MuScriptor = NC: keep it an optional extra (`pip install stemscribe[muscriptor]`
 or just a documented optional dep), clearly marked non-commercial.
 
@@ -139,11 +149,11 @@ Compare (informally) with `~/Playground/rearranged/phase0/koprualti_style.mid`
 
 ## Non-goals for v1 (extension points only)
 
-- Beat/downbeat grid (beat_this), chord labels (BTC/BACHI), section detection —
-  rearranged's glue research covers these; leave hooks, don't build.
+- Chord labels (BTC/BACHI), section detection: leave hooks, don't build. (The
+  beat/downbeat grid and drum transcription moved in scope on 2026-09-25.)
 - Melody identification inside instrumental tracks (skyline etc.) — rearranged
   keeps that logic; here melody comes only from the vocal stem.
-- Drum transcription.
+- Tempo changes within a song (the grid is one constant tempo).
 - GPU/ROCm tuning.
 
 ## Integration note (for rearranged, later)

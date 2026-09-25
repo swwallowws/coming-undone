@@ -14,10 +14,13 @@ audio in (mp3/wav/m4a) — a file, or a URL
   └─ 1. separate      demucs htdemucs → drums / bass / other / vocals
   └─ 1b. tempo        detect BPM from the isolated drums stem
   └─ 2. instrumental  mix drums+bass+other
-  └─ 3. transcribe    per-stem audio→MIDI (pluggable backend; drums skipped)
+  └─ 3. transcribe    per-stem audio→MIDI (pluggable backend; drums via ADT_STR;
+  │                   a nearly empty stem is re-run with basic-pitch)
   └─ 4. cleanup       de-overlap + duration-trim pass
   └─ 5. merge         one multi-track MIDI, GM programs + named tracks
   └─ 6. realign       shift MIDI back onto the original file's timeline
+  └─ 7. grid          tempo + real bar lines fitted from the tightest track;
+                      optional latency removal + snapping (--snap)
 ```
 
 ## Install
@@ -26,6 +29,7 @@ audio in (mp3/wav/m4a) — a file, or a URL
 pip install -e .            # library + CLI
 pip install -e '.[web]'     # + local web UI
 pip install -e '.[fetch]'   # + fetch audio from a URL (yt-dlp)
+pip install -e '.[drums]'   # + drum transcription (ADT_STR, CC BY-SA 4.0)
 ```
 
 Needs Python 3.11 and `ffmpeg` on PATH. Developed on macOS (Apple Silicon);
@@ -116,10 +120,10 @@ and writes your files. Don't expose it.
 
 | File | What |
 |---|---|
-| `song.mid` | multi-track MIDI: melody (from vocals), bass, comping |
+| `song.mid` | multi-track MIDI: melody (from vocals), bass, comping, drums; real tempo map and bar lines |
 | `song_instrumental.mp3` | stems-minus-vocals mix |
 | `stems/{drums,bass,other,vocals}.wav` | the separated stems |
-| `manifest.json` | input hash, params, backend, per-track note counts, quantization-error stats, timings, warnings |
+| `manifest.json` | input hash, params, backend, per-track note counts, quantization-error stats, the beat grid (tempo, bar lines, per-track latency and fit), drum backend, fallbacks, timings, warnings |
 
 Track names (`melody`, `bass`, `comping`) are the contract downstream consumers
 read — `melody` is always the vocal line. Renaming them breaks rearranged.
@@ -151,8 +155,33 @@ First run downloads ~2GB into the HF cache.
 Add a backend in `backends.py`: a callable `(stem_wav, out_mid) -> Path | None`
 registered in `BACKENDS`. Klangio and YourMT3+ can slot in the same way.
 
-**Drums are skipped.** Pitched backends can't transcribe an unpitched kit; the
-skip is recorded in `manifest.json`. `backends.transcribe_drums()` is the hook.
+### Drums
+
+Pitched backends can't transcribe an unpitched kit, so the drums stem goes to its
+own registry, `DRUM_BACKENDS`. The one there is **ADT_STR** (Melucci, Merialdo,
+Akama 2026, [github.com/pier-maker92/ADT_STR](https://github.com/pier-maker92/ADT_STR)),
+code and weights CC BY-SA 4.0: commercial use is allowed with credit. Install
+`pip install 'stemscribe[drums]'`; the first run downloads the model repo from
+Hugging Face at a pinned revision (`backends.ADT_STR_REVISION`), because that repo
+ships code stemscribe imports. Without the extra the drums stem is skipped with a
+warning, as before. `--drums none` turns it off.
+
+ADT_STR writes its own "GM custom" class numbers without converting them back;
+stemscribe maps each class to the first standard GM drum in it
+(`backends.ADT_STR_TO_GM`). It runs early: 41 ms on the reference song, which is
+why snapping removes each track's latency first (see Beat grid).
+
+CC BY-SA's share-alike clause covers adaptations of the model itself. My reading is
+that transcribed MIDI is output, not an adaptation, but that is a reading, not
+legal advice: check it before shipping drums commercially.
+
+### Sparse stems
+
+A backend can come back nearly empty on a stem that clearly has sound in it
+(MuScriptor gave 3 bass notes for a whole song). Under one note per 4 bars, on a
+stem that is not silent and at least 8 bars long, stemscribe transcribes that stem
+again with basic-pitch and records it under `fallbacks` in the manifest.
+`--no-fallback` turns it off.
 
 ## Cleanup
 
@@ -237,9 +266,51 @@ octave error is instant and lossless — see the web UI's alternates, or
 `POST /api/jobs/{id}/tempo`.
 
 Beat trackers confuse half and double time, so `res.tempo.candidates` carries
-the scored alternates. A full beat/downbeat grid is a non-goal (rearranged's
-glue research owns it, via beat_this): `tempo.ESTIMATORS` is the registry where
-a better estimator drops in, exactly like `BACKENDS`.
+the scored alternates. `tempo.ESTIMATORS` is the registry where a better
+estimator drops in, exactly like `BACKENDS`. This tempo is only the starting
+guess: the grid stage refines it (below).
+
+## Beat grid
+
+A tempo alone does not make bars. stemscribe fits a real grid, one constant tempo
+plus bar lines, and writes it into the MIDI. This matters downstream: rearranged
+is MIDI-only and copies its donor's timing, and a transcription without a real
+grid (a 120 BPM placeholder, half its notes 20 ms or more off) had to be repaired
+by hand.
+
+- **The tempo comes from the notes.** A good backend writes onsets on the song's
+  real 16th grid to within about 1 ms, while beat trackers land a percent or so off
+  (beat_this was 1.2% fast on the reference song), which drifts a bar away over a
+  song. Each track is fitted within 3% of the detected tempo, and the best-aligned
+  one with at least 64 onsets sets the grid. On the reference song, per-stem
+  MuScriptor's comping gave 113.998 BPM against a truth of 114.0; even basic-pitch's
+  comping found it.
+- **Bar "one" is a guess you can correct.** It is the beat of four where the
+  harmony changes most. That was exact on a sequenced song but a near tie on a song
+  whose chords are pushed ahead of the bar; low-end drum energy, tried first, was
+  two beats off. The confidence goes into the manifest, a low one warns, and
+  `--downbeat 2|3|4` says which beat of the guessed bar is really "one". The web UI
+  moves it a beat at a time and re-stamps instantly.
+- **No note moves for the grid.** The first bar is a pickup of its own tempo that
+  ends exactly on the first real bar line; from there the tempo is the fitted one.
+- **Snapping is opt-in (`--snap`).** It removes each track's latency (its median
+  signed offset from the grid) and then puts starts on 16ths, ends on 32nds and
+  keeps one hit per drum per 16th. Removing latency first matters: ADT_STR's drums
+  ran 41 ms early, and plain snapping pushed 4 hits in 10 onto the previous 16th.
+  Off by default because snapping deletes real feel.
+- **The manifest's `grid`** records the tempo, first bar line, source track, the
+  "one" confidence and any override, and per track its alignment, latency and
+  median distance to the grid (`grid_fit_ms`).
+- If no track sits on a steady grid, the MIDI keeps the detected tempo, nothing is
+  snapped, and a warning says so. `--no-grid` skips the stage.
+
+**Any MIDI, not only stemscribe's:** `stemscribe-grid in.mid -o out.mid [--snap]
+[--downbeat N] [--tempo BPM]` fits and stamps a grid on a file transcribed
+elsewhere and writes `out.grid.json` beside it. Without `--tempo` it searches 60
+to 200 BPM, since such files often carry a placeholder tempo map.
+
+One constant tempo per song: a song that speeds up or has tempo changes needs
+more than this.
 
 ## Input conditioning
 
@@ -286,20 +357,46 @@ rearranged; this is a convenience, not a takeover.
 
 ## Scope
 
-v1 processes whole songs. Section cutting stays with the caller. Beat/downbeat
-grids, chord labels, section detection, melody extraction from instrumental
-tracks, and drum transcription are explicit non-goals — hooks only.
+v1 processes whole songs. Section cutting stays with the caller. Chord labels,
+section detection, melody extraction from instrumental tracks and tempo changes
+are non-goals, hooks only. Vocals need a dedicated singing-transcription model
+later: MuScriptor does not transcribe singing (0 notes on the reference song's
+vocal stem).
 
-Because there's no beat tracker, anything beat-based (the cleanup duration cap,
-the manifest's quantization-error stats) assumes a constant `tempo` (default
-120). The quantization numbers are a *relative* legibility signal, not ground
-truth.
+The cleanup duration cap and the manifest's older quantization-error stats run
+before the grid stage, against a constant tempo from t=0; they are a relative
+legibility signal. The grid's per-track `grid_fit_ms` is the measured one.
 
 ## Licenses
 
-demucs MIT, basic-pitch Apache-2.0, soundfile BSD, pretty_midi MIT, yt-dlp
-Unlicense — all fine for a commercial path. MuScriptor's weights are CC-BY-NC
-and are kept as an optional, clearly-marked extra.
+Every model dependency, stated explicitly:
+
+| Component | Code | Weights | Commercial path |
+|---|---|---|---|
+| demucs (htdemucs) | MIT | **research only** | **no** |
+| basic-pitch | Apache-2.0 | Apache-2.0 | yes |
+| MuScriptor (optional extra) | MIT | CC-BY-NC | no |
+| ADT_STR drums (optional extra) | CC BY-SA 4.0 | CC BY-SA 4.0 | yes, with credit (see Drums) |
+| soundfile, pretty_midi, librosa, yt-dlp | BSD, MIT, ISC, Unlicense | none | yes |
+
+**demucs's weights are not MIT.** Its author, on facebookresearch/demucs#327
+(2022-05-23): "The model weights are not covered by the MIT license, and are
+provided only for scientific purposes" (they are trained on MUSDB). An earlier
+version of this README called demucs fine for a commercial path; that was wrong.
+`STEMSCRIBE_COMMERCIAL=1` guards the transcription backends only, not separation,
+so a commercial build needs a different separator first.
+
+**Separation decision (2026-09-25): keep htdemucs for v1.** v1 is a portfolio
+tool, where research-only weights are fine, and htdemucs is well tested here.
+Compared: BS-Roformer and SCNet separate better (higher SDR) but their public
+weights mostly carry no licence, so they are no better for a commercial path. The
+first commercial candidate is the Mel-Band-Roformer vocal checkpoint by Kimberley
+Jensen, MIT since April 2026 (vocals only; the other stems still need a licensed
+model). Revisit before any commercial release.
+
+**basic-pitch is the commercial-safe transcription path** (confirmed 2026-09-25):
+with `STEMSCRIBE_COMMERCIAL=1`, MuScriptor hard-fails before separation starts and
+basic-pitch runs; `tests/test_commercial_guard.py` holds both.
 
 Tooling licenses are only half of it: what you feed the pipeline carries its own
 rights, and that's on the operator, not the code. `manifest.json` records the
