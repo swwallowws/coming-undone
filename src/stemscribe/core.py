@@ -14,8 +14,10 @@ from dataclasses import dataclass, field, replace
 from typing import Callable
 
 import pretty_midi
+import soundfile as _sf
 
 from . import backends as _backends
+from . import grid as _grid
 from . import fetch as _fetch
 from .cache import Cache, file_hash, human_bytes
 from . import merge as _merge
@@ -125,6 +127,11 @@ def process(
     mono_stems: tuple[str, ...] = (),
     backend_kwargs: dict | None = None,
     progress: Callable[[str, str], None] | None = None,
+    drums: str | None = "adt-str",
+    grid: bool = True,
+    snap: bool = False,
+    downbeat: int | None = None,
+    fallback: bool = True,
 ) -> Result:
     """Audio in, stems + labeled multi-track MIDI out.
 
@@ -140,6 +147,12 @@ def process(
     mono_stems: stems to collapse to one note at a time, keeping the lowest,
     e.g. ("bass",). Removes overtones and bleed; also removes real double-stops.
     progress: optional callback(stage, message) for UIs.
+    drums: the drum backend for the drums stem ("adt-str", needs the [drums] extra),
+    or None to skip drums. Skipped with a warning when the extra is not installed.
+    grid: fit the beat grid from the tightest track and write real bar lines.
+    snap: also remove each track's latency and snap it to the grid (off by default:
+    snapping deletes real feel). downbeat: 1-4, which beat of the guessed bar is "one".
+    fallback: re-transcribe a nearly empty stem with basic-pitch.
     """
     t_start = time.perf_counter()
     timings: dict[str, float] = {}
@@ -319,41 +332,69 @@ def process(
         if not include_vocals_melody:
             wanted = [s for s in wanted if s != "vocals"]
 
+        drum_jobs: list[str] = []
         for skipped in sorted(set(stem_paths) & _backends.UNPITCHED_STEMS):
-            w = f"stem {skipped!r} skipped: {backend} is a pitched backend and cannot transcribe drums"
+            if drums and _backends.drums_available():
+                drum_jobs.append(skipped)
+                continue
+            why = ("drums are off" if not drums else
+                   "the drum backend is not installed (pip install 'stemscribe[drums]')")
+            w = f"stem {skipped!r} skipped: {why}"
             warnings.append(w)
             log.warning(w)
 
         raw_dir = out_dir / "_raw_midi"
         stem_midis: dict[str, pathlib.Path] = {}
+        fallbacks: dict[str, str] = {}
         t0 = time.perf_counter()
         raw_dir.mkdir(parents=True, exist_ok=True)
-        for stem in wanted:
+
+        def _transcribe(stem: str, name: str, fn, kwargs: dict) -> pathlib.Path | None:
             # Also deterministic, so cache it: this is what makes tuning a
             # cleanup knob cost seconds rather than another basic-pitch pass.
-            mkey = Cache.midi_key(
-                audio_hash, demucs_model, stem, backend, backend_kwargs or {}
-            )
+            mkey = Cache.midi_key(audio_hash, demucs_model, stem, name, kwargs)
             hit = cch.get_dir("midi", mkey)
             dst = raw_dir / f"{stem}.mid"
             if hit and (hit / "out.mid").exists():
                 shutil.copy2(hit / "out.mid", dst)
-                _emit("transcribe", f"cached {stem} transcription")
-                stem_midis[stem] = dst
-                continue
-
-            _emit("transcribe", f"transcribing {stem} stem with {backend} ...")
-            mid = backend_fn(stem_paths[stem], dst, **(backend_kwargs or {}))
+                _emit("transcribe", f"cached {stem} transcription ({name})")
+                return dst
+            _emit("transcribe", f"transcribing {stem} stem with {name} ...")
+            mid = fn(stem_paths[stem], dst, **kwargs)
             if mid is None:
-                w = f"backend {backend!r} produced no MIDI for stem {stem!r}"
+                w = f"backend {name!r} produced no MIDI for stem {stem!r}"
                 warnings.append(w)
                 log.warning(w)
-                continue
+                return None
             if cch.enabled:
                 w = cch.begin("midi", mkey)
                 shutil.copy2(mid, w.path / "out.mid")
-                w.commit({"stem": stem, "backend": backend})
-            stem_midis[stem] = mid  # stays in raw_dir; the cache holds a copy
+                w.commit({"stem": stem, "backend": name})
+            return mid  # stays in raw_dir; the cache holds a copy
+
+        for stem in wanted:
+            mid = _transcribe(stem, backend, backend_fn, backend_kwargs or {})
+            if mid and fallback and backend != _backends.FALLBACK_BACKEND:
+                n_notes = sum(len(i.notes) for i in pretty_midi.PrettyMIDI(str(mid)).instruments)
+                y, sr = _sf.read(str(stem_paths[stem]), dtype="float32", always_2d=True)
+                rms = float((y ** 2).mean() ** 0.5) if y.size else 0.0
+                if _backends.is_sparse(n_notes, len(y) / sr, bpm, rms):
+                    w = (f"stem {stem!r}: {backend} gave only {n_notes} notes; "
+                         f"transcribed it again with {_backends.FALLBACK_BACKEND}")
+                    warnings.append(w)
+                    log.warning(w)
+                    again = _transcribe(stem, _backends.FALLBACK_BACKEND,
+                                        _backends.get_backend(_backends.FALLBACK_BACKEND), {})
+                    if again:
+                        mid = again
+                        fallbacks[stem] = _backends.FALLBACK_BACKEND
+            if mid:
+                stem_midis[stem] = mid
+        drum_midis: dict[str, pathlib.Path] = {}
+        for stem in drum_jobs:
+            mid = _transcribe(stem, drums, _backends.DRUM_BACKENDS[drums], {})
+            if mid:
+                drum_midis[stem] = mid
         timings["transcribe"] = round(time.perf_counter() - t0, 2)
 
         if not stem_midis:
@@ -388,7 +429,7 @@ def process(
         # --- 5. merge -------------------------------------------------------
         t0 = time.perf_counter()
         midi_path, track_map = _merge.merge_midis(
-            stem_midis, out_dir / f"{song}.mid", tempo=bpm
+            {**stem_midis, **drum_midis}, out_dir / f"{song}.mid", tempo=bpm
         )
         timings["merge"] = round(time.perf_counter() - t0, 2)
 
@@ -421,6 +462,27 @@ def process(
                 f"shifted {n} notes +{prepared.offset:.2f}s back onto the original timeline",
             )
 
+        # --- 7. grid --------------------------------------------------------
+        # After realign on purpose: the grid is fitted on the original file's
+        # timeline, which is the one the MIDI's notes refer to.
+        grid_info: dict = {"fitted": False, "disabled": True}
+        if grid:
+            t0 = time.perf_counter()
+            _emit("grid", "fitting the beat grid ...")
+            pm = pretty_midi.PrettyMIDI(str(midi_path))
+            gridded, grid_info, gw = _grid.apply(pm, bpm, snap_notes=snap, downbeat=downbeat)
+            for w in gw:
+                warnings.append(w)
+                log.warning(w)
+            if grid_info["fitted"]:
+                gridded.write(str(midi_path))
+                tempo_est.bpm = grid_info["bpm"]
+                tempo_est.method += "+grid-fit"
+                _emit("grid", f"grid {grid_info['bpm']:.3f} BPM from {grid_info['source_track']}, "
+                              f"first bar line at {grid_info['first_bar']:.2f}s"
+                              + (", snapped" if snap else ""))
+            timings["grid"] = round(time.perf_counter() - t0, 2)
+
         shutil.rmtree(raw_dir, ignore_errors=True)
         timings["total"] = round(time.perf_counter() - t_start, 2)
 
@@ -448,6 +510,9 @@ def process(
                 "backend_kwargs": backend_kwargs or {},
             },
             "tempo": tempo_est.as_dict(),
+            "grid": grid_info,
+            "drums": {"backend": drums, "stems": sorted(drum_midis)} if drum_midis else None,
+            "fallbacks": fallbacks,
             "prepared_audio": prepared.as_dict(),
             "cache": cch.summary(),
             "outputs": {

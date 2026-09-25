@@ -103,12 +103,85 @@ def transcribe_muscriptor(
     return out_mid if out_mid.exists() else None
 
 
-# --- extension point: drums -------------------------------------------------
-def transcribe_drums(stem_wav: pathlib.Path, out_mid: pathlib.Path, **_):
-    """Not built (v1 non-goal). A drum backend would map onsets to GM channel 10
-    percussion keys rather than pitches, so it does not fit the pitched contract
-    above. Wire a real one in here and drop "drums" from UNPITCHED_STEMS."""
-    raise NotImplementedError("drum transcription is a v1 non-goal")
+# --- drums: ADT_STR (code and weights CC BY-SA 4.0) --------------------------
+#: Melucci, Merialdo, Akama 2026, https://github.com/pier-maker92/ADT_STR. The model
+#: repo ships its own code, which is imported, so it is pinned to a revision.
+ADT_STR_REPO = "Pierfrancesco/adt-str"
+ADT_STR_REVISION = "a33c5c6b191a4ca1e0f6dc22140947485eb36ce8"   # 2026-09-17
+ADT_STR_VARIANT = "setting-tau-0.8"
+
+#: ADT_STR writes its own "GM custom" class numbers without converting them back.
+#: Each class -> the first standard GM drum in it (its MappingUtils table).
+ADT_STR_TO_GM = {35: 35, 36: 36, 37: 37, 38: 38, 39: 39, 40: 40, 41: 41, 42: 42, 43: 44,
+                 44: 46, 45: 47, 46: 49, 47: 50, 48: 51, 49: 52, 50: 54, 51: 55, 52: 56,
+                 53: 58, 54: 60, 55: 69, 56: 71, 57: 73, 58: 75, 59: 78, 60: 80}
+
+
+def to_standard_gm(pm):
+    """ADT_STR output as one standard-GM drum track named "drums"."""
+    import pretty_midi
+
+    out = pretty_midi.PrettyMIDI()
+    kit = pretty_midi.Instrument(program=0, is_drum=True, name="drums")
+    for inst in pm.instruments:
+        for n in inst.notes:
+            kit.notes.append(pretty_midi.Note(n.velocity, ADT_STR_TO_GM.get(n.pitch, n.pitch),
+                                              n.start, n.end))
+    kit.notes.sort(key=lambda n: (n.start, n.pitch))
+    out.instruments.append(kit)
+    return out
+
+
+def transcribe_adt_str(stem_wav: pathlib.Path, out_mid: pathlib.Path,
+                       variant: str = ADT_STR_VARIANT, **_) -> pathlib.Path | None:
+    """ADT_STR on the drums stem. Needs `pip install 'stemscribe[drums]'`; the first
+    run downloads the model repo from Hugging Face."""
+    import sys
+    import tempfile
+
+    import pretty_midi
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as e:
+        raise BackendError("drum transcription needs pip install 'stemscribe[drums]'") from e
+    repo = snapshot_download(ADT_STR_REPO, revision=ADT_STR_REVISION)
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    from adt_transcriber import ADTTranscriber
+
+    tr = ADTTranscriber.from_pretrained(repo, variant=variant)
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = pathlib.Path(tr.transcribe(str(stem_wav), output_dir=tmp))
+        pm = pretty_midi.PrettyMIDI(str(raw))
+    out_mid.parent.mkdir(parents=True, exist_ok=True)
+    to_standard_gm(pm).write(str(out_mid))
+    return out_mid if out_mid.exists() else None
+
+
+DRUM_BACKENDS: dict[str, Callable[..., pathlib.Path | None]] = {
+    "adt-str": transcribe_adt_str,   # CC BY-SA 4.0: commercial use allowed, with credit
+}
+
+
+def drums_available() -> bool:
+    """Whether the drum backend's extra is installed (it is optional)."""
+    import importlib.util
+    return importlib.util.find_spec("huggingface_hub") is not None
+
+
+# --- sparse stems -------------------------------------------------------------
+SILENT_RMS = 1e-3
+
+
+def is_sparse(n_notes: int, seconds: float, bpm: float, rms: float) -> bool:
+    """A stem with sound in it but under one note per 4 bars came out nearly empty
+    (MuScriptor gave 3 bass notes for a 4-minute song): transcribe it again with the
+    fallback backend. Short sections (under 8 bars) are never judged."""
+    bars = seconds * bpm / 240.0
+    return rms > SILENT_RMS and bars >= 8 and n_notes < bars / 4
+
+
+FALLBACK_BACKEND = "basic-pitch"
 
 
 BACKENDS: dict[str, Callable[..., pathlib.Path | None]] = {

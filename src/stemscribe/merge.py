@@ -17,10 +17,14 @@ TRACK_SPEC: dict[str, tuple[str, int]] = {
     # piano and then stemscribe silently drops them.
     "guitar": ("guitar", 25),  # GM 26 Acoustic Guitar (steel)
     "piano": ("piano", 0),     # GM 1  Acoustic Grand Piano
+    "drums": ("drums", 0),     # a GM drum kit (channel 10)
 }
 
+#: Stems whose track is a drum kit.
+DRUM_STEMS = frozenset({"drums"})
+
 #: Track order in the merged file. res.track_map indexes into this.
-TRACK_ORDER = ("melody", "bass", "guitar", "piano", "comping")
+TRACK_ORDER = ("melody", "bass", "guitar", "piano", "comping", "drums")
 
 
 def track_for_stem(stem: str) -> tuple[str, int]:
@@ -45,7 +49,7 @@ def merge_midis(
     for stem, mid_path in stem_midis.items():
         name, program = track_for_stem(stem)
         src = pretty_midi.PrettyMIDI(str(mid_path))
-        inst = pretty_midi.Instrument(program=program, is_drum=False, name=name)
+        inst = pretty_midi.Instrument(program=program, is_drum=stem in DRUM_STEMS, name=name)
         # A backend may return several instruments per stem; they all belong to
         # this stem's one track.
         for si in src.instruments:
