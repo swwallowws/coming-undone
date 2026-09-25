@@ -117,6 +117,48 @@ def test_tempo_restamp_moves_grid_not_notes(client, tmp_path):
     assert job.result["tempo"]["source"] == "user"
 
 
+def _gridded_job(tmp_path):
+    from stemscribe import grid as G
+    job = make_job(tmp_path, status="done")
+    out = job.dir / "out"
+    out.mkdir(parents=True, exist_ok=True)
+    pm = pretty_midi.PrettyMIDI()
+    inst = pretty_midi.Instrument(program=0, name="comping")
+    inst.notes.append(pretty_midi.Note(velocity=90, pitch=60, start=1.0, end=20.0))
+    pm.instruments.append(inst)
+    g = G.Grid(114.0, 1.5)
+    G.stamp(pm, g).write(str(out / "song.mid"))
+    job.result = {"midi": "out/song.mid", "tempo": {"bpm": 114.0, "source": "detected"},
+                  "grid": {"fitted": True, "bpm": 114.0, "anchor": 1.5, "first_bar": 1.5}}
+    return job, out
+
+
+def test_bar_shift_moves_bar_one_by_a_beat_and_not_the_notes(client, tmp_path):
+    job, out = _gridded_job(tmp_path)
+    r = client.post("/api/jobs/j1/bar", data={"beats": 1})
+    assert r.status_code == 200
+    after = pretty_midi.PrettyMIDI(str(out / "song.mid"))
+    assert after.get_downbeats()[1] == pytest.approx(1.5 + 60 / 114, abs=2e-3)
+    assert after.instruments[0].notes[0].start == pytest.approx(1.0, abs=2e-3)
+    assert job.result["grid"]["anchor"] == pytest.approx(1.5 + 60 / 114)
+
+
+def test_bar_shift_without_a_grid_409s(client, tmp_path):
+    job = make_job(tmp_path, status="done")
+    job.result = {"midi": "out/song.mid", "tempo": {"bpm": 120.0}, "grid": {"fitted": False}}
+    assert client.post("/api/jobs/j1/bar", data={"beats": 1}).status_code == 409
+
+
+def test_tempo_restamp_keeps_the_bar_lines_of_a_grid(client, tmp_path):
+    job, out = _gridded_job(tmp_path)
+    assert client.post("/api/jobs/j1/tempo", data={"bpm": 57.0}).status_code == 200
+    after = pretty_midi.PrettyMIDI(str(out / "song.mid"))
+    assert float(after.get_tempo_changes()[1][-1]) == pytest.approx(57.0, abs=0.01)
+    bar = 4 * 60 / 57.0                                    # 1.5 s sits inside the long pickup
+    first = after.get_downbeats()[1]
+    assert abs(((first - 1.5) / bar) - round((first - 1.5) / bar)) < 1e-3
+
+
 def test_tempo_restamp_rejects_nonsense(client, tmp_path):
     job = make_job(tmp_path, status="done")
     job.result = {"midi": "out/song.mid", "tempo": {"bpm": 120.0}}

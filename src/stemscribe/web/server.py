@@ -24,6 +24,7 @@ from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 
 from .. import __version__
+from .. import grid as _grid
 from ..backends import BACKENDS, NONCOMMERCIAL_BACKENDS
 from ..cleanup import CleanupParams
 from ..core import _jsonable, process
@@ -122,6 +123,7 @@ def _payload(job: Job, res) -> dict:
     m = res.manifest
     return {
         "tempo": res.tempo.as_dict() if res.tempo else None,
+        "grid": m.get("grid"),
         "prepared": res.prepared.as_dict() if res.prepared else None,
         "source": res.source.as_dict() if res.source else None,
         "track_map": res.track_map,
@@ -294,13 +296,41 @@ def restamp_tempo(jid: str, bpm: float = Form(...)) -> dict:
 
     midi_path = job.dir / job.result["midi"]
     old = pretty_midi.PrettyMIDI(str(midi_path))
-    new = pretty_midi.PrettyMIDI(initial_tempo=bpm)
-    new.instruments = old.instruments
-    new.write(str(midi_path))
+    grid = job.result.get("grid") or {}
+    if grid.get("fitted"):          # keep bar "one" where it is; only the tempo changes
+        g = _grid.Grid(bpm, grid["anchor"])
+        _grid.stamp(old, g).write(str(midi_path))
+        grid.update(g.as_dict())
+    else:
+        new = pretty_midi.PrettyMIDI(initial_tempo=bpm)
+        new.instruments = old.instruments
+        new.write(str(midi_path))
 
     job.result["tempo"]["bpm"] = round(bpm, 2)
     job.result["tempo"]["source"] = "user"
     return {"bpm": round(bpm, 2)}
+
+
+@app.post("/api/jobs/{jid}/bar")
+def shift_bar(jid: str, beats: int = Form(...)) -> dict:
+    """Move bar "one" by whole beats (the guess can be off). Re-stamps the tempo map
+    only: no note moves, like the tempo re-stamp."""
+    import pretty_midi
+
+    job = _job(jid)
+    if job.status != "done" or not job.result:
+        raise HTTPException(409, "job is not finished")
+    grid = job.result.get("grid") or {}
+    if not grid.get("fitted"):
+        raise HTTPException(409, "this job has no beat grid")
+    if not -3 <= beats <= 3:
+        raise HTTPException(400, "shift by -3 to 3 beats")
+    midi_path = job.dir / job.result["midi"]
+    g = _grid.shift(_grid.Grid(grid["bpm"], grid["anchor"]), beats)
+    _grid.stamp(pretty_midi.PrettyMIDI(str(midi_path)), g).write(str(midi_path))
+    grid.update({**g.as_dict(), "anchor": g.anchor,
+                 "shift_beats": grid.get("shift_beats", 0) + beats})
+    return {"first_bar": grid["first_bar"]}
 
 
 @app.get("/api/jobs/{jid}/files/{path:path}")

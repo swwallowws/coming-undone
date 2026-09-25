@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import pathlib
 import sys
 
 from . import __version__
@@ -165,6 +166,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="how hard to snap, 0..1. 1.0 is rigid, 0.5 keeps human feel (default: 0.5)",
     )
 
+    g = p.add_argument_group("beat grid and drums")
+    g.add_argument("--no-grid", dest="grid", action="store_false",
+                   help="do not fit a beat grid (the MIDI gets the detected tempo only)")
+    g.add_argument("--snap", action="store_true",
+                   help="remove each track's latency and snap it to the grid (off: keeps feel)")
+    g.add_argument("--downbeat", type=int, choices=(1, 2, 3, 4), default=None,
+                   help="which beat of the guessed bar is really 'one'")
+    g.add_argument("--drums", default="adt-str", choices=("adt-str", "none"),
+                   help="drum transcription (adt-str needs the [drums] extra; default: adt-str)")
+    g.add_argument("--no-fallback", dest="fallback", action="store_false",
+                   help="do not re-transcribe a nearly empty stem with basic-pitch")
+
     k = p.add_argument_group("cache")
     k.add_argument(
         "--no-cache",
@@ -241,6 +254,11 @@ def main(argv: list[str] | None = None) -> int:
             demucs_model=args.demucs_model,
             device=args.device,
             tempo=args.tempo,
+            drums=None if args.drums == "none" else args.drums,
+            grid=args.grid,
+            snap=args.snap,
+            downbeat=args.downbeat,
+            fallback=args.fallback,
         )
     except (BackendError, FetchError, PrepareError, FileNotFoundError, RuntimeError) as e:
         print(f"stemscribe: {e}", file=sys.stderr)
@@ -257,6 +275,13 @@ def main(argv: list[str] | None = None) -> int:
         if alts:
             detail += f" -- if wrong, try --tempo {alts}"
     print(f"\ntempo      {detail}")
+    gi = res.manifest.get("grid") or {}
+    if gi.get("fitted"):
+        print(f"grid       first bar line at {gi['first_bar']:.2f}s (from {gi['source_track']}, "
+              f"'one' confidence {gi['bar_one_confidence']:.2f})"
+              + (", snapped" if gi["snapped"] else "") + " -- if 'one' is wrong, try --downbeat 2/3/4")
+    for w in res.warnings:
+        print(f"warning    {w}")
 
     tracks = ", ".join(f"{n}({res.manifest['tracks'][n]['note_count']})" for n in res.track_map)
     print(f"MIDI       {res.midi_path}  [{tracks}]")
@@ -266,6 +291,45 @@ def main(argv: list[str] | None = None) -> int:
         print(f"stems      {next(iter(res.stem_paths.values())).parent}")
     print(f"manifest   {res.manifest_path}")
     print(f"took       {res.manifest['timings_sec']['total']}s")
+    return 0
+
+
+def grid_main(argv: list[str] | None = None) -> int:
+    """stemscribe-grid: fit and stamp a beat grid on any MIDI (a donor transcribed
+    elsewhere, say), optionally snapping it. Writes OUT and OUT's .grid.json report."""
+    import json
+
+    import pretty_midi
+
+    from . import grid as _grid
+
+    p = argparse.ArgumentParser(prog="stemscribe-grid", description=grid_main.__doc__)
+    p.add_argument("midi")
+    p.add_argument("-o", "--out", required=True)
+    p.add_argument("--tempo", type=float, default=None,
+                   help="a tempo to search near (default: search 60-200 BPM; the file's own "
+                        "tempo map is often a placeholder)")
+    p.add_argument("--snap", action="store_true")
+    p.add_argument("--downbeat", type=int, choices=(1, 2, 3, 4), default=None)
+    a = p.parse_args(argv)
+    try:
+        pm = pretty_midi.PrettyMIDI(a.midi)
+        out, info, warnings = _grid.apply(pm, a.tempo, snap_notes=a.snap, downbeat=a.downbeat)
+    except (OSError, ValueError) as e:
+        print(f"stemscribe-grid: {e}", file=sys.stderr)
+        return 1
+    for w in warnings:
+        print(f"warning    {w}", file=sys.stderr)
+    if not info["fitted"]:
+        return 1
+    dst = pathlib.Path(a.out)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    out.write(str(dst))
+    dst.with_suffix(".grid.json").write_text(json.dumps(info, indent=2))
+    print(f"grid       {info['bpm']:.3f} BPM from {info['source_track']}, first bar line at "
+          f"{info['first_bar']:.2f}s ('one' confidence {info['bar_one_confidence']:.2f})"
+          + (", snapped" if a.snap else ""))
+    print(f"MIDI       {dst}")
     return 0
 
 

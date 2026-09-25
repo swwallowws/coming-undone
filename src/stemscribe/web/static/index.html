@@ -278,6 +278,13 @@
         <span class="pill" id="tempo-src"></span>
         <span class="pill" id="tempo-from"></span>
       </div>
+      <div class="alts hidden" id="bar-box">
+        <div style="color:var(--dim);font-size:12.5px" id="bar-info"></div>
+        <div class="alt-btns">
+          <button class="alt" id="bar-earlier">&larr; one a beat earlier</button>
+          <button class="alt" id="bar-later">one a beat later &rarr;</button>
+        </div>
+      </div>
       <div class="alts hidden" id="alts">
         <div style="color:var(--dim);font-size:12.5px">
           Beat trackers confuse half and double time. If the grid looks wrong, try one of these &mdash;
@@ -485,6 +492,25 @@ function render(id, res) {
                                t.source === "user" ? "you set this" : "fallback";
   $("tempo-from").textContent = t.analyzed_stem ? `from ${t.analyzed_stem} stem` : "";
   $("tempo-from").classList.toggle("hidden", !t.analyzed_stem);
+
+  // bar "one": a guess, so it can be moved a beat at a time (re-stamps, no note moves)
+  const g = res.grid || {};
+  if (g.fitted) {
+    $("bar-box").classList.remove("hidden");
+    const info = () => {
+      $("bar-info").textContent = `Bars start at ${g.first_bar.toFixed(2)}s (grid from ${g.source_track}` +
+        `${g.snapped ? ", notes snapped" : ""}). Bar "one" is a guess` +
+        (g.bar_one_confidence < 0.2 ? " with low confidence: check it." : ".");
+    };
+    info();
+    const move = async (beats) => {
+      const fd = new FormData(); fd.append("beats", beats);
+      const r = await fetch(`/api/jobs/${id}/bar`, { method: "POST", body: fd });
+      if (r.ok) { g.first_bar = (await r.json()).first_bar; info(); }
+    };
+    $("bar-earlier").onclick = () => move(-1);
+    $("bar-later").onclick = () => move(1);
+  }
 
   const alts = (t.candidates || []).filter(c => c.ratio !== 1);
   if (alts.length) {

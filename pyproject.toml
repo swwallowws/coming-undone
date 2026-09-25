@@ -22,6 +22,10 @@ dependencies = [
 # Prototype/eval only -- never install this extra in a commercial path.
 muscriptor = ["muscriptor"]
 web = ["fastapi>=0.100", "uvicorn>=0.23", "python-multipart>=0.0.6"]
+# Drum transcription with ADT_STR (code and weights CC BY-SA 4.0: commercial use is
+# allowed with credit). The model repo is downloaded at a pinned revision on first use;
+# its own requirements come with it.
+drums = ["huggingface_hub>=0.20"]
 # Fetch audio from a URL. yt-dlp is Unlicense (public domain).
 fetch = ["yt-dlp>=2024.1"]
 dev = ["pytest>=7", "httpx>=0.24"]
@@ -29,6 +33,7 @@ dev = ["pytest>=7", "httpx>=0.24"]
 [project.scripts]
 stemscribe = "stemscribe.cli:main"
 stemscribe-web = "stemscribe.web.server:main"
+stemscribe-grid = "stemscribe.cli:grid_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
