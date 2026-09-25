@@ -392,7 +392,13 @@ def process(
                 stem_midis[stem] = mid
         drum_midis: dict[str, pathlib.Path] = {}
         for stem in drum_jobs:
-            mid = _transcribe(stem, drums, _backends.DRUM_BACKENDS[drums], {})
+            try:        # drums are optional: a broken drum model never sinks the run
+                mid = _transcribe(stem, drums, _backends.DRUM_BACKENDS[drums], {})
+            except _backends.BackendError as e:
+                w = f"stem {stem!r} skipped: drum backend {drums!r} failed: {e}"
+                warnings.append(w)
+                log.warning(w)
+                continue
             if mid:
                 drum_midis[stem] = mid
         timings["transcribe"] = round(time.perf_counter() - t0, 2)

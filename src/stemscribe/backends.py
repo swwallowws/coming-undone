@@ -147,7 +147,11 @@ def transcribe_adt_str(stem_wav: pathlib.Path, out_mid: pathlib.Path,
     repo = snapshot_download(ADT_STR_REPO, revision=ADT_STR_REVISION)
     if repo not in sys.path:
         sys.path.insert(0, repo)
-    from adt_transcriber import ADTTranscriber
+    try:
+        from adt_transcriber import ADTTranscriber
+    except ImportError as e:
+        raise BackendError(f"ADT_STR needs its model's requirements ({e.name} is missing): "
+                           f"pip install 'stemscribe[drums]'") from e
 
     tr = ADTTranscriber.from_pretrained(repo, variant=variant)
     with tempfile.TemporaryDirectory() as tmp:
@@ -163,10 +167,15 @@ DRUM_BACKENDS: dict[str, Callable[..., pathlib.Path | None]] = {
 }
 
 
+#: What ADT_STR's own code imports at inference (its repo's pyproject also pins
+#: torch 2.8 / torchaudio 2.8 / torchcodec, which stemscribe does not force).
+ADT_STR_NEEDS = ("huggingface_hub", "transformers", "omegaconf", "safetensors")
+
+
 def drums_available() -> bool:
     """Whether the drum backend's extra is installed (it is optional)."""
     import importlib.util
-    return importlib.util.find_spec("huggingface_hub") is not None
+    return all(importlib.util.find_spec(m) is not None for m in ADT_STR_NEEDS)
 
 
 # --- sparse stems -------------------------------------------------------------

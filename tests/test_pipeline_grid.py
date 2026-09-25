@@ -88,6 +88,23 @@ def test_grid_drums_and_fallback_land_in_the_midi_and_manifest(run):
     assert m["grid"]["tracks"]["drums"]["latency_ms"] == pytest.approx(-52, abs=5)
 
 
+def test_a_failing_drum_model_warns_and_the_run_goes_on(run, monkeypatch):
+    def broken(stem_wav, out_mid, **_):
+        raise backends.BackendError("ADT_STR needs its model's requirements")
+    monkeypatch.setitem(backends.DRUM_BACKENDS, "fake-drums", broken)
+    res = run()
+    assert any("drums" in w and "requirements" in w for w in res.warnings)
+    assert "drums" not in {i.name for i in pretty_midi.PrettyMIDI(str(res.midi_path)).instruments}
+
+
+def test_drums_are_available_only_with_the_model_requirements(monkeypatch):
+    import importlib.util
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name, *a: None if name == "transformers" else real(name, *a))
+    assert backends.drums_available() is False
+
+
 def test_no_snap_keeps_note_times_and_grid_can_be_turned_off(run):
     res = run()
     pm = pretty_midi.PrettyMIDI(str(res.midi_path))

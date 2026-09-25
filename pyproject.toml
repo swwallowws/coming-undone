@@ -23,9 +23,10 @@ dependencies = [
 muscriptor = ["muscriptor"]
 web = ["fastapi>=0.100", "uvicorn>=0.23", "python-multipart>=0.0.6"]
 # Drum transcription with ADT_STR (code and weights CC BY-SA 4.0: commercial use is
-# allowed with credit). The model repo is downloaded at a pinned revision on first use;
-# its own requirements come with it.
-drums = ["huggingface_hub>=0.20"]
+# allowed with credit). The model repo is downloaded at a pinned revision on first use.
+# These are what its code imports at inference; its own pyproject also pins torch 2.8,
+# torchaudio 2.8 and torchcodec, which can clash with demucs here (see README, Drums).
+drums = ["huggingface_hub>=0.20", "transformers>=4.40", "omegaconf>=2.3", "safetensors>=0.4"]
 # Fetch audio from a URL. yt-dlp is Unlicense (public domain).
 fetch = ["yt-dlp>=2024.1"]
 dev = ["pytest>=7", "httpx>=0.24"]

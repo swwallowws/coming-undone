@@ -164,7 +164,15 @@ code and weights CC BY-SA 4.0: commercial use is allowed with credit. Install
 `pip install 'stemscribe[drums]'`; the first run downloads the model repo from
 Hugging Face at a pinned revision (`backends.ADT_STR_REVISION`), because that repo
 ships code stemscribe imports. Without the extra the drums stem is skipped with a
-warning, as before. `--drums none` turns it off.
+warning, as before, and a drum model that fails to load warns instead of sinking
+the run. `--drums none` turns it off.
+
+**Environment catch:** ADT_STR's own pyproject pins `torch==2.8.0`,
+`torchaudio==2.8.0` and `torchcodec`, and torchcodec is exactly what breaks
+demucs's save path here (see Known gotchas; `separate.py` avoids it). The
+`[drums]` extra lists only what the model imports and does not force those pins.
+The bake-off ran ADT_STR in its own virtualenv; running it inside stemscribe's
+environment is not yet verified.
 
 ADT_STR writes its own "GM custom" class numbers without converting them back;
 stemscribe maps each class to the first standard GM drum in it
