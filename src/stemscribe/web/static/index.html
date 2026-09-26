@@ -75,9 +75,6 @@
   .tname { font-weight: 700; }
   .dot { display: inline-block; width: 8px; height: 8px; margin-right: 8px; }
 
-  .stem-row { display: grid; grid-template-columns: 7rem 1fr; gap: 16px; align-items: center; padding: 4px 0; }
-  .stem-name { font-size: 13px; color: var(--ink-mut); }
-  audio { height: 32px; width: 100%; }
 
   .dl { display: flex; gap: 8px; flex-wrap: wrap; }
   .note { color: var(--ink-mut); font-size: 12px; margin-top: 10px; }
@@ -107,6 +104,20 @@
   .num input[type=number] { width: 5.5em; font-family: var(--font-mono); font-size: 12.5px; padding: 3px 6px; }
   button.small { padding: 3px 8px; font-size: 12px; }
 
+  /* results: the transcribed MIDI as a roll, one player, downloads at hand */
+  .result-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .roll-box { position: relative; height: 240px; border: var(--hairline); cursor: pointer; }
+  #roll { display: block; width: 100%; height: 100%; }
+  #roll-head { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--acc); pointer-events: none; }
+  .legend { display: flex; gap: 16px; margin: 8px 0 0; font-size: 12px; color: var(--ink-mut); }
+  .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 6px; }
+  .player { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .player .primary { min-width: 80px; }
+
+  /* progress: a stage column and its messages; the newest line is the one happening now */
+  #log > div { display: grid; grid-template-columns: 9rem 1fr; gap: 12px; color: var(--ink-mut); }
+  #log > div.now { color: var(--ink); }
+
   /* the chosen file, drawn as its waveform */
   #wave-box { border: var(--hairline); background: var(--ground-2); padding: 12px 14px 10px; }
   .wave-head, .wave-foot { display: flex; align-items: baseline; gap: 8px; }
@@ -119,7 +130,6 @@
   @media (max-width: 600px) {
     header.bar { padding: 12px 16px; gap: 12px; }
     .wrap { padding: 16px 16px 64px; }
-    .stem-row { grid-template-columns: 1fr; gap: 2px; }
   }
 </style>
 </head>
@@ -221,9 +231,24 @@
 
   <!-- results -->
   <div id="results" class="hidden">
+    <div class="panel">
+      <div class="result-head">
+        <h2 style="margin:0">Result</h2><span class="spacer"></span><span class="dl" id="dl"></span>
+      </div>
+      <div class="roll-box" id="roll-box"><canvas id="roll"></canvas><div id="roll-head"></div></div>
+      <div class="legend mono" id="legend"></div>
+      <div class="player">
+        <button class="primary" id="pl-play">Play</button>
+        <span class="choice" id="pl-stems"></span>
+        <span class="mono mut" id="pl-time"></span>
+      </div>
+      <audio id="pl-audio" preload="auto"></audio>
+      <div class="note" id="timing-note"></div>
+    </div>
+
     <div class="panel hidden" id="src-panel">
       <h2>Source</h2>
-      <div id="src-title" style="font-weight:600"></div>
+      <div id="src-title" style="font-weight:700"></div>
       <div id="src-meta" class="hint"></div>
       <div class="note">Kept in manifest.json with the output.</div>
     </div>
@@ -259,16 +284,6 @@
       </table>
     </div>
 
-    <div class="panel">
-      <h2>Listen</h2>
-      <div id="players"></div>
-    </div>
-
-    <div class="panel">
-      <h2>Download</h2>
-      <div class="dl" id="dl"></div>
-      <div class="note" id="timing-note"></div>
-    </div>
   </div>
 </div>
 
@@ -511,7 +526,9 @@ function listen(id) {
     if (d.stage === "done") { es.close(); finish(id); return; }
     if (d.stage === "error") { es.close(); fail(d.message); return; }
     const line = document.createElement("div");
-    line.innerHTML = `<span class="stage">${esc(d.stage)}</span>  ${esc(d.message)}`;
+    line.innerHTML = `<span class="stage">${esc(d.stage)}</span><span>${esc(d.message)}</span>`;
+    $("log").querySelectorAll(".now").forEach(x => x.classList.remove("now"));
+    line.classList.add("now");
     $("log").appendChild(line);
     $("log").scrollTop = $("log").scrollHeight;
   };
@@ -628,18 +645,25 @@ function render(id, res) {
     tb.appendChild(tr);
   });
 
-  // players
-  const pl = $("players"); pl.innerHTML = "";
-  const add = (label, path) => {
-    if (!path) return;
-    const d = document.createElement("div");
-    d.className = "stem-row";
-    d.innerHTML = `<div class="stem-name">${esc(label)}</div>
-                   <audio controls preload="none" src="${url(path)}"></audio>`;
-    pl.appendChild(d);
-  };
-  add("instrumental", res.instrumental);
-  STEM_ORDER.forEach(s => add(s, (res.stems || {})[s]));
+  // one player: pick what to hear; switching keeps the place in the song
+  const sources = [["instrumental", res.instrumental], ...STEM_ORDER.map(s => [s, (res.stems || {})[s]])]
+    .filter(([, p]) => p);
+  const audio = $("pl-audio");
+  $("pl-stems").innerHTML = sources.map(([name, p], i) =>
+    `<button data-src="${esc(url(p))}" class="${i === 0 ? "on" : ""}">${esc(name)}</button>`).join("");
+  $("pl-stems").querySelectorAll("button").forEach(b => b.onclick = () => {
+    const at = audio.currentTime, wasPlaying = !audio.paused;
+    audio.src = b.dataset.src;
+    audio.addEventListener("loadedmetadata", () => { audio.currentTime = at; if (wasPlaying) audio.play(); }, { once: true });
+    $("pl-stems").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  });
+  if (sources.length) audio.src = url(sources[0][1]);
+  $("pl-play").onclick = () => { audio.paused ? audio.play() : audio.pause(); };
+  audio.onplay = () => { $("pl-play").textContent = "Pause"; };
+  audio.onpause = () => { $("pl-play").textContent = "Play"; };
+  // a section's MIDI keeps the original file's timeline, its audio starts at 0: the roll starts at the section
+  rollStart = (res.prepared || {}).offset || 0;
+  fetch(`/api/jobs/${id}/roll`).then(r => r.json()).then(r => { roll = r; drawLegend(); drawRoll(); followAudio(); });
 
   // downloads
   const dl = $("dl"); dl.innerHTML = "";
@@ -651,8 +675,8 @@ function render(id, res) {
     dl.appendChild(a);
   };
   link("MIDI", res.midi, true);
-  link("Instrumental", res.instrumental);
-  link("manifest.json", res.manifest);
+  link("instrumental", res.instrumental);
+  link("manifest", res.manifest);
 
   // timing note: the thing that is easy to get wrong downstream
   const p = res.prepared || {};
@@ -660,6 +684,65 @@ function render(id, res) {
     ? `MIDI is on the original file's timeline: notes are shifted +${p.offset.toFixed(2)}s to match the audio you uploaded.`
     : `MIDI note times match the uploaded audio exactly.`;
 }
+
+// ---- the piano roll of the finished MIDI (design/roll.md): key bands, one tint per track,
+// softer notes paler, sounding notes full strength, the playhead in the accent
+let roll = null, rollStart = 0;
+const span = () => Math.max(roll.end - rollStart, 1);
+const TRACK_TOKEN = { melody: "--acc", bass: "--ink", comping: "--ink-mut" };
+const toRgb = token => { const c = resolved(token).match(/[\d.]+/g).slice(0, 3).map(Number); return c; };
+const rgbStr = c => `rgb(${c.map(Math.round).join(",")})`;
+const mixRgb = (a, b, p) => rgbStr(a.map((x, i) => x * p + b[i] * (1 - p)));
+
+function drawLegend() {
+  $("legend").innerHTML = (roll ? roll.tracks : []).map(t =>
+    `<span><i style="background:var(${TRACK_TOKEN[t.name] || "--ink-mut"})"></i>${esc(t.name)}</span>`).join("");
+}
+
+function drawRoll() {
+  const cv = $("roll"), dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (!roll || !w) return;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext("2d"); g.scale(dpr, dpr);
+  const ground = toRgb("--ground-2"), band = toRgb("--band"), ink = toRgb("--ink");
+  const ps = roll.tracks.flatMap(t => t.notes.map(n => n[0]));
+  if (!ps.length) return;
+  const lo = Math.min(...ps) - 1, hi = Math.max(...ps) + 1;
+  const rh = h / (hi - lo + 1), xs = w / span(), y = p => h - (p - lo + 1) * rh;
+  g.fillStyle = rgbStr(ground); g.fillRect(0, 0, w, h);
+  g.fillStyle = rgbStr(band);
+  for (let p = lo; p <= hi; p++) if ([1, 3, 6, 8, 10].includes(p % 12)) g.fillRect(0, y(p), w, rh);
+  const now = ($("pl-audio").currentTime || 0) + rollStart, playing = !$("pl-audio").paused;
+  for (const t of roll.tracks) {
+    const col = toRgb(TRACK_TOKEN[t.name] || "--ink-mut");
+    for (const [p, s, e, v] of t.notes) {
+      const on = playing && now >= s && now < e;
+      g.fillStyle = on ? rgbStr(col) : mixRgb(col, ground, 0.35 + 0.65 * v / 127);
+      const x = (s - rollStart) * xs, nw = Math.max(1, (e - s) * xs - 1), ny = y(p), nh = Math.max(1, rh - 1);
+      g.fillRect(x, ny, nw, nh);
+      if (on && nh > 2) { g.strokeStyle = rgbStr(ink); g.strokeRect(x + 0.5, ny + 0.5, nw - 1, nh - 1); }
+    }
+  }
+}
+
+function followAudio() {
+  const a = $("pl-audio");
+  if (roll) {
+    $("roll-head").style.left = `${Math.min(1, (a.currentTime || 0) / span()) * 100}%`;
+    $("pl-time").textContent = `${fmtT(a.currentTime || 0)} / ${fmtT(span())}`;
+    if (!a.paused) drawRoll();
+  }
+  requestAnimationFrame(followAudio);
+}
+$("roll-box").onclick = e => {
+  if (!roll) return;
+  const r = $("roll-box").getBoundingClientRect(), a = $("pl-audio");
+  a.currentTime = ((e.clientX - r.left) / r.width) * span();
+  if (a.paused) a.play();
+  drawRoll();
+};
+addEventListener("resize", drawRoll);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawRoll);
 </script>
 </body>
 </html>

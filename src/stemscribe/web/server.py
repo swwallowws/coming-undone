@@ -336,6 +336,22 @@ def shift_bar(jid: str, beats: int = Form(...)) -> dict:
     return {"first_bar": grid["first_bar"]}
 
 
+@app.get("/api/jobs/{jid}/roll")
+def job_roll(jid: str) -> dict:
+    """The finished MIDI's pitched notes per track, [pitch, start, end, velocity], for the
+    page's piano roll. Drums have no pitch to draw, so they are left out."""
+    import pretty_midi
+
+    job = _job(jid)
+    if job.status != "done" or not job.result or not job.result.get("midi"):
+        raise HTTPException(409, "job is not finished")
+    pm = pretty_midi.PrettyMIDI(str(job.dir / job.result["midi"]))
+    tracks = [{"name": inst.name, "notes": [[int(n.pitch), round(float(n.start), 4), round(float(n.end), 4),
+                                             int(n.velocity)] for n in inst.notes]}
+              for inst in pm.instruments if not inst.is_drum and inst.notes]
+    return {"end": float(pm.get_end_time()), "tracks": tracks}
+
+
 @app.get("/api/jobs/{jid}/files/{path:path}")
 def get_file(jid: str, path: str):
     job = _job(jid)

@@ -186,3 +186,25 @@ def test_unknown_backend_rejected(client, tmp_path):
         r = client.post("/api/jobs", files={"file": ("a.wav", fh, "audio/wav")},
                         data={"backend": "nope"})
     assert r.status_code == 400
+
+
+def test_roll_lists_each_tracks_pitched_notes(client, tmp_path):
+    job = make_job(tmp_path, status="done")
+    out = job.dir / "out"
+    out.mkdir(parents=True, exist_ok=True)
+    pm = pretty_midi.PrettyMIDI()
+    mel = pretty_midi.Instrument(program=53, name="melody")
+    mel.notes.append(pretty_midi.Note(velocity=100, pitch=72, start=0.5, end=1.0))
+    kit = pretty_midi.Instrument(program=0, name="drums", is_drum=True)
+    kit.notes.append(pretty_midi.Note(velocity=100, pitch=36, start=0.0, end=0.1))
+    pm.instruments += [mel, kit]
+    pm.write(str(out / "song.mid"))
+    job.result = {"midi": "out/song.mid"}
+    roll = client.get("/api/jobs/j1/roll").json()
+    assert roll["tracks"] == [{"name": "melody", "notes": [[72, 0.5, 1.0, 100]]}]
+    assert roll["end"] == pytest.approx(1.0)
+
+
+def test_roll_of_an_unfinished_job_409s(client, tmp_path):
+    make_job(tmp_path, status="running")
+    assert client.get("/api/jobs/j1/roll").status_code == 409
