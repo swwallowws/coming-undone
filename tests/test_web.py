@@ -37,6 +37,14 @@ def test_index_and_config(client):
     assert next(b for b in cfg["backends"] if b["name"] == "muscriptor")["noncommercial"] is True
 
 
+def test_page_uses_the_shared_design_system(client):
+    page = client.get("/").text
+    assert 'data-category="transcribe"' in page and "/vendor/design/tokens.css" in page
+    css = client.get("/vendor/design/tokens.css")
+    assert css.status_code == 200 and "--acc" in css.text
+    assert client.get("/vendor/design/fonts/Archivo.woff2").status_code == 200
+
+
 def test_basic_pitch_is_not_flagged_noncommercial(client):
     cfg = client.get("/api/config").json()
     bp = next(b for b in cfg["backends"] if b["name"] == "basic-pitch")

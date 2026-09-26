@@ -22,6 +22,7 @@ from typing import Any
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from .. import __version__
 from .. import grid as _grid
@@ -34,6 +35,8 @@ from ..prepare import PrepareParams
 STATIC = pathlib.Path(__file__).parent / "static"
 
 app = FastAPI(title="stemscribe", version=__version__)
+# the shared design system (tokens, fonts), copied in by design/sync.sh
+app.mount("/vendor", StaticFiles(directory=STATIC / "vendor"), name="vendor")
 
 
 @dataclass
