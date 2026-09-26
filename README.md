@@ -25,15 +25,34 @@ audio in (mp3/wav/m4a) — a file, or a URL
 
 ## Install
 
-```bash
-pip install -e .            # library + CLI
-pip install -e '.[web]'     # + local web UI
-pip install -e '.[fetch]'   # + fetch audio from a URL (yt-dlp)
-pip install -e '.[drums]'   # + drum transcription (ADT_STR, CC BY-SA 4.0)
-```
-
 Needs Python 3.11 and `ffmpeg` on PATH. Developed on macOS (Apple Silicon);
 Linux works.
+
+The tested setup is one virtualenv at `.venv` with torch and torchaudio pinned
+to 2.8.0 (no torchcodec, see Known gotchas):
+
+```bash
+python3.11 -m venv .venv
+.venv/bin/pip install 'torch==2.8.0' 'torchaudio==2.8.0'
+.venv/bin/pip install -e '.[web,fetch,drums,dev]'
+```
+
+Or pick extras one at a time:
+
+```bash
+pip install -e .                 # library + CLI
+pip install -e '.[web]'          # + local web UI
+pip install -e '.[fetch]'        # + fetch audio from a URL (yt-dlp)
+pip install -e '.[drums]'        # + drum transcription (ADT_STR, CC BY-SA 4.0)
+pip install -e '.[muscriptor]'   # + the default backend (non-commercial, see Backends)
+```
+
+The default backend, muscriptor, is not in the base install. Without that extra,
+pass `--backend basic-pitch` (or `backend="basic-pitch"`).
+
+No audio, stems, MIDI or reference songs are included in this repo, and no model
+weights: the models download on first use and keep their own licences (see
+Licenses).
 
 ## Use
 
@@ -171,8 +190,8 @@ the run. `--drums none` turns it off.
 `torchaudio==2.8.0` and `torchcodec`, and torchcodec is exactly what breaks
 demucs's save path here (see Known gotchas; `separate.py` avoids it). The
 `[drums]` extra lists only what the model imports and does not force those pins.
-The bake-off ran ADT_STR in its own virtualenv; running it inside stemscribe's
-environment is not yet verified.
+The tested environment (see Install) pins torch and torchaudio 2.8.0 and leaves
+torchcodec out.
 
 ADT_STR writes its own "GM custom" class numbers without converting them back;
 stemscribe maps each class to the first standard GM drum in it
@@ -377,6 +396,12 @@ legibility signal. The grid's per-track `grid_fit_ms` is the measured one.
 
 ## Licenses
 
+stemscribe's own code is MIT (see `LICENSE`). That licence covers this
+repository's code only. The models stemscribe downloads and the libraries it
+depends on keep their own licences, and some of them do not allow commercial
+use. The vendored fonts in `src/stemscribe/web/static/vendor/design/fonts/` are
+SIL OFL 1.1 (licence files beside them).
+
 Every model dependency, stated explicitly:
 
 | Component | Code | Weights | Commercial path |
@@ -407,8 +432,10 @@ with `STEMSCRIBE_COMMERCIAL=1`, MuScriptor hard-fails before separation starts a
 basic-pitch runs; `tests/test_commercial_guard.py` holds both.
 
 Tooling licenses are only half of it: what you feed the pipeline carries its own
-rights, and that's on the operator, not the code. `manifest.json` records the
-source URL for fetched audio so the question stays answerable later.
+rights, and that's on the operator, not the code. Anything you download with the
+URL fetch (yt-dlp) is your responsibility: make sure you have the right to
+download and process it. `manifest.json` records the source URL for fetched audio
+so the question stays answerable later.
 
 ## Tests
 

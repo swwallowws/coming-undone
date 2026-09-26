@@ -7,11 +7,26 @@ dist/
 .venv/
 venv/
 
-# pipeline outputs
+# pipeline outputs, and any audio (reference songs must never be committed)
 out/
+inputs/
 *.mid
+*.midi
 *.wav
+*.mp3
+*.flac
+*.m4a
+*.aac
+*.ogg
+*.opus
+*.webm
 !tests/**/*.mid
+
+# secrets (yt-dlp cookie exports, env files, HF tokens)
+.env
+.env.*
+cookies*.txt
+*.cookies
 
 # model weights (multi-GB; live in the HF cache, never in the repo)
 *.safetensors
