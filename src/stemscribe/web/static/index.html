@@ -46,9 +46,6 @@
     border: var(--hairline); border-radius: 0; padding: 6px 8px; }
   input:focus, select:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
 
-  details.adv { margin-top: 16px; }
-  details.adv > summary { cursor: pointer; color: var(--ink-mut); font-size: 13px; }
-  .adv-body { padding-top: 12px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 16px; }
   label.f { display: block; font-size: 13px; color: var(--ink-mut); margin-bottom: 4px; }
   .check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
@@ -87,6 +84,38 @@
   .warn-box { border-left: 2px solid var(--acc); padding: 4px 0 4px 12px; margin-bottom: 12px; font-size: 13px; }
   .err-box { border-left: 2px solid var(--acc); padding: 4px 0 4px 12px; font-family: var(--font-mono); font-size: 12.5px; white-space: pre-wrap; }
   a { color: var(--ink); text-underline-offset: 3px; }
+  /* the form: a label column and a value column, every option visible */
+  .mut { color: var(--ink-mut); }
+  .spacer { flex: 1; }
+  .form-grid { display: grid; grid-template-columns: 8.5rem 1fr; gap: 18px 16px; align-items: baseline; margin-top: 28px; }
+  .form-grid > .label { color: var(--ink-mut); font-size: 13px; padding-top: 6px; }
+  .choice { display: inline-flex; flex-wrap: wrap; }
+  .choice button { margin-right: -1px; }
+  .choice button.on { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip input { position: absolute; opacity: 0; pointer-events: none; }
+  .chip span { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border: var(--hairline);
+    background: var(--ground-2); cursor: pointer; font-size: 13px; color: var(--ink-mut); }
+  .chip span::before { content: ""; width: 7px; height: 7px; border: 1px solid var(--ink-mut); }
+  .chip span:hover { border-color: var(--ink); }
+  .chip input:checked + span { color: var(--ink); border-color: var(--ink); }
+  .chip input:checked + span::before { background: var(--acc); border-color: var(--acc); }
+  .chip input:focus-visible + span { outline: 2px solid var(--acc); outline-offset: 1px; }
+  .chip.off, .dep-nums.off { opacity: .35; pointer-events: none; }
+  .nums { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 10px; }
+  .num { font-size: 13px; color: var(--ink-mut); display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .num input[type=number] { width: 5.5em; font-family: var(--font-mono); font-size: 12.5px; padding: 3px 6px; }
+  button.small { padding: 3px 8px; font-size: 12px; }
+
+  /* the chosen file, drawn as its waveform */
+  #wave-box { border: var(--hairline); background: var(--ground-2); padding: 12px 14px 10px; }
+  .wave-head, .wave-foot { display: flex; align-items: baseline; gap: 8px; }
+  .wave-foot { font-size: 12px; margin-top: 6px; min-height: 22px; align-items: center; }
+  #wave { display: block; width: 100%; height: 96px; margin-top: 10px; cursor: crosshair; touch-action: none; }
+  @media (max-width: 600px) {
+    .form-grid { grid-template-columns: 1fr; gap: 4px; }
+    .form-grid > .label { padding-top: 14px; }
+  }
   @media (max-width: 600px) {
     header.bar { padding: 12px 16px; gap: 12px; }
     .wrap { padding: 16px 16px 64px; }
@@ -101,91 +130,80 @@
   <span class="tagline">audio in, stems and labelled multi-track MIDI out</span>
 </header>
 <div class="wrap">
-
-  <!-- input -->
-  <div class="panel">
-    <div id="drop">
-      <div class="drop-main">Drop an audio file here, or click to choose</div>
+  <div class="panel" id="form">
+    <div id="drop" tabindex="0" role="button" aria-label="Choose an audio file">
+      <div class="drop-main">Drop an audio file, or click to choose</div>
       <div class="drop-sub">mp3, wav, m4a, flac</div>
     </div>
+    <div id="wave-box" class="hidden">
+      <div class="wave-head">
+        <span class="filename" id="fname"></span><span class="mono mut" id="fmeta"></span>
+        <span class="spacer"></span><button class="ghost small" id="change">change file</button>
+      </div>
+      <canvas id="wave" height="96"></canvas>
+      <div class="wave-foot mono mut"><span id="sel-text">whole song · drag across the waveform to transcribe only a section</span>
+        <span class="spacer"></span><button class="ghost small hidden" id="sel-clear">whole song</button></div>
+    </div>
     <input type="file" id="file" accept="audio/*,.mp3,.wav,.m4a,.flac,.aiff" class="hidden">
+    <div class="or" id="or"><span>or paste a link</span></div>
+    <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=..." aria-label="Link to audio">
 
-    <div class="or"><span>or paste a link</span></div>
-    <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=...">
-    <div class="hint" id="url-hint">Downloaded with yt-dlp; the link is kept in manifest.json.</div>
+    <div class="form-grid">
+      <span class="label">Stems</span>
+      <div><span class="choice" data-for="model">
+          <button data-v="htdemucs">4 stems</button><button data-v="htdemucs_6s">6 stems</button></span>
+        <div class="hint" id="model-hint"></div></div>
+      <input type="hidden" id="model" value="htdemucs">
 
-    <details class="adv">
-      <summary>Options</summary>
-      <div class="adv-body">
-        <div class="grid">
-          <div>
-            <label class="f" for="backend">Backend</label>
-            <select id="backend"></select>
-            <div class="hint" id="backend-hint"></div>
-          </div>
-          <div>
-            <label class="f" for="model">Separation model</label>
-            <select id="model">
-              <option value="htdemucs">htdemucs: drums, bass, other, vocals</option>
-              <option value="htdemucs_6s">htdemucs_6s: adds guitar, piano</option>
-            </select>
-            <div class="hint" id="model-hint">4 stems: guitars land in "other".</div>
-          </div>
-          <div>
-            <label class="f" for="audiofmt">Downloaded audio</label>
-            <select id="audiofmt">
-              <option value="native">native codec (best quality)</option>
-              <option value="mp3">mp3 192k</option>
-            </select>
-            <div class="hint">Links only.</div>
-          </div>
-          <div>
-            <label class="f" for="tempo">Tempo</label>
-            <input type="number" id="tempo" placeholder="auto-detect" step="0.01" min="20" max="400">
-            <div class="hint">Empty: detected.</div>
-          </div>
-          <div>
-            <label class="f" for="start">Start (s)</label>
-            <input type="number" id="start" placeholder="0" step="0.1" min="0">
-            <div class="hint">Whole song by default.</div>
-          </div>
-          <div>
-            <label class="f" for="duration">Duration (s)</label>
-            <input type="number" id="duration" placeholder="to end" step="0.1" min="0">
-            <div class="hint">Short runs are quicker to try.</div>
-          </div>
+      <span class="label">Transcriber</span>
+      <div><span class="choice" data-for="backend" id="backend-choice"></span>
+        <div class="hint" id="backend-hint"></div></div>
+      <input type="hidden" id="backend" value="muscriptor">
+
+      <span class="label">Tracks</span>
+      <div class="chips">
+        <label class="chip"><input type="checkbox" id="vocals" checked><span>vocals as melody</span></label>
+        <label class="chip"><input type="checkbox" id="monovocals"><span>one voice melody</span></label>
+        <label class="chip"><input type="checkbox" id="monobass"><span>one note bass</span></label>
+      </div>
+
+      <span class="label">Cleanup</span>
+      <div>
+        <div class="chips">
+          <label class="chip"><input type="checkbox" id="cleanup" checked><span>clean up notes</span></label>
+          <label class="chip dep"><input type="checkbox" id="deoverlap" checked><span>de-overlap</span></label>
+          <label class="chip dep"><input type="checkbox" id="trim" checked><span>trim silence</span></label>
+          <label class="chip dep"><input type="checkbox" id="legato"><span>legato</span></label>
+          <label class="chip"><input type="checkbox" id="strip" checked><span>strip metadata</span></label>
         </div>
-        <div class="grid" style="margin-top:16px">
-          <div class="check"><input type="checkbox" id="vocals" checked><label for="vocals">Vocals &rarr; melody track</label></div>
-          <div class="check"><input type="checkbox" id="cleanup" checked><label for="cleanup">Cleanup pass</label></div>
-          <div class="check"><input type="checkbox" id="deoverlap" checked><label for="deoverlap">De-overlap</label></div>
-          <div class="check"><input type="checkbox" id="trim" checked><label for="trim">Trim silence</label></div>
-          <div class="check"><input type="checkbox" id="strip" checked><label for="strip">Strip metadata</label></div>
-          <div class="check"><input type="checkbox" id="legato"><label for="legato">Legato (close small gaps)</label></div>
-          <div class="check"><input type="checkbox" id="monobass"><label for="monobass">Mono bass (strip overtones + bleed)</label></div>
-          <div class="check"><input type="checkbox" id="monovocals"><label for="monovocals">Mono melody (one voice)</label></div>
-        </div>
-        <div class="grid" style="margin-top:16px">
-          <div>
-            <label class="f" for="maxbeats">Duration cap (beats)</label>
-            <input type="number" id="maxbeats" value="2" step="0.5" min="0">
-          </div>
-          <div>
-            <label class="f" for="velfloor">Velocity floor</label>
-            <input type="number" id="velfloor" value="15" step="1" min="0" max="127">
-          </div>
-          <div>
-            <label class="f" for="legatogap">Legato max gap (beats)</label>
-            <input type="number" id="legatogap" value="0.25" step="0.25" min="0">
-            <div class="hint">Bigger gaps are treated as real rests and left alone.</div>
-          </div>
+        <div class="nums dep-nums">
+          <label class="num">notes at most <input type="number" id="maxbeats" value="2" step="0.5" min="0"> beats</label>
+          <label class="num">quieter than <input type="number" id="velfloor" value="15" step="1" min="0" max="127"> dropped</label>
+          <label class="num" id="legatogap-row">legato closes gaps up to <input type="number" id="legatogap" value="0.25" step="0.25" min="0"> beats</label>
         </div>
       </div>
-    </details>
 
-    <div class="row">
-      <button class="primary" id="go" disabled>Transcribe</button>
-      <button class="ghost hidden" id="again">New file</button>
+      <span class="label">Tempo</span>
+      <label class="num"><input type="number" id="tempo" placeholder="auto" step="0.01" min="20" max="400"> BPM
+        <span class="mut">empty: detected from the audio</span></label>
+
+      <span class="label">Section</span>
+      <div class="nums" style="margin:0">
+        <label class="num">from <input type="number" id="start" placeholder="0" step="0.1" min="0"> s</label>
+        <label class="num">for <input type="number" id="duration" placeholder="all" step="0.1" min="0"> s</label>
+      </div>
+
+      <span class="label link-only hidden">Link audio</span>
+      <div class="link-only hidden"><span class="choice" data-for="audiofmt">
+          <button data-v="native">original</button><button data-v="mp3">mp3 192k</button></span>
+        <div class="hint">original skips a second lossy encode</div></div>
+      <input type="hidden" id="audiofmt" value="native">
+
+      <span></span>
+      <div class="row" style="margin-top:8px">
+        <button class="primary" id="go" disabled>Transcribe</button>
+        <button class="ghost hidden" id="again">New file</button>
+      </div>
     </div>
   </div>
 
@@ -260,36 +278,57 @@ const STEM_ORDER = ["vocals", "drums", "bass", "other"];
 const TRACK_COLOR = { melody: "var(--melody)", bass: "var(--bass)", comping: "var(--comping)" };
 let file = null, jobId = null;
 
-// ---- config
+// ---- config: version and the transcribers this install has
+const MODEL_HINT = {
+  htdemucs: 'drums, bass, vocals, other: guitars land in "other"',
+  htdemucs_6s: "adds guitar and piano; slower, and two guitars stay together",
+};
 fetch("/api/config").then(r => r.json()).then(c => {
   $("ver").textContent = "v" + c.version;
-  const sel = $("backend");
-  c.backends.forEach(b => {
-    const o = document.createElement("option");
-    o.value = b.name;
-    o.textContent = b.name + (b.noncommercial ? "  (non-commercial)" : "");
-    sel.appendChild(o);
-  });
-  sel.value = "muscriptor";
-  $("model").onchange = () => {
-    const six = $("model").value === "htdemucs_6s";
-    $("model-hint").textContent = six
-      ? "6 stems: guitar and piano get their own (slower, experimental, two guitars stay together)."
-      : '4 stems: guitars land in "other".';
-  };
-  sel.onchange = () => {
-    const b = c.backends.find(x => x.name === sel.value);
+  const box = $("backend-choice");
+  box.innerHTML = c.backends.map(b => `<button data-v="${esc(b.name)}">${esc(b.name)}</button>`).join("");
+  if (!c.backends.some(b => b.name === $("backend").value)) $("backend").value = c.backends[0].name;
+  const hint = () => {
+    const b = c.backends.find(x => x.name === $("backend").value);
     $("backend-hint").textContent = b && b.noncommercial
-      ? "CC-BY-NC weights: prototypes only, never commercial."
-      : "Apache-2.0: commercial-safe.";
-    $("backend-hint").style.color = b && b.noncommercial ? "var(--acc)" : "";
+      ? "best quality; CC-BY-NC weights, so prototypes only" : "Apache-2.0, safe for commercial use";
   };
-  sel.onchange();
+  choiceHooks.backend = hint;
+  wireChoices();
+  hint();
 });
 
-// ---- file picking
+// ---- joined option buttons: each writes its value into the hidden input it names
+const choiceHooks = { model: () => { $("model-hint").textContent = MODEL_HINT[$("model").value]; } };
+function wireChoices() {
+  document.querySelectorAll(".choice[data-for]").forEach(group => {
+    const input = $(group.dataset.for);
+    const mark = () => group.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === input.value));
+    group.querySelectorAll("button").forEach(b => b.onclick = () => {
+      input.value = b.dataset.v; mark();
+      (choiceHooks[group.dataset.for] || (() => {}))();
+    });
+    mark();
+  });
+}
+wireChoices();
+choiceHooks.model();
+
+// ---- cleanup is the master switch: its parts and numbers follow it
+function syncCleanup() {
+  const on = $("cleanup").checked;
+  document.querySelectorAll(".chip.dep").forEach(c => c.classList.toggle("off", !on));
+  document.querySelectorAll(".dep-nums").forEach(c => c.classList.toggle("off", !on));
+  $("legatogap-row").classList.toggle("hidden", !$("legato").checked);
+}
+$("cleanup").onchange = syncCleanup;
+$("legato").onchange = syncCleanup;
+syncCleanup();
+
+// ---- picking a file: the drop zone becomes its waveform
 const drop = $("drop");
 drop.onclick = () => $("file").click();
+drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } };
 drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
 drop.ondragleave = () => drop.classList.remove("over");
 drop.ondrop = e => {
@@ -297,26 +336,117 @@ drop.ondrop = e => {
   if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
 };
 $("file").onchange = e => { if (e.target.files.length) setFile(e.target.files[0]); };
+$("change").onclick = () => $("file").click();
 
-function setFile(f) {
+const fmtT = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+let peaks = null, total = 0, sel = null;
+
+async function setFile(f) {
   file = f;
-  $("url").value = "";           // a file and a URL are mutually exclusive
-  drop.classList.add("has-file");
-  const mb = (f.size / 1048576).toFixed(1);
-  drop.innerHTML = `<div class="drop-main"><span class="filename">${esc(f.name)}</span></div>
-                    <div class="drop-sub">${mb} MB · click to change</div>`;
+  $("url").value = "";           // a file and a URL are alternatives
+  showLinkOnly(false);
+  drop.classList.add("hidden"); $("or").classList.add("hidden"); $("url").classList.add("hidden");
+  $("wave-box").classList.remove("hidden");
+  $("fname").textContent = f.name;
+  $("fmeta").textContent = ` ${(f.size / 1048576).toFixed(1)} MB · reading…`;
+  sel = null; peaks = null; drawWave();
   refresh();
+  try {
+    const ctx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 2, 44100);
+    const buf = await ctx.decodeAudioData(await f.arrayBuffer());
+    total = buf.duration;
+    peaks = computePeaks(buf, 1200);
+    $("fmeta").textContent = ` ${fmtT(total)} · ${(f.size / 1048576).toFixed(1)} MB`;
+  } catch (e) {
+    $("fmeta").textContent = ` ${(f.size / 1048576).toFixed(1)} MB · no preview (the transcription still works)`;
+  }
+  drawWave();
 }
 
-// URL and file are alternatives: typing a link clears a chosen file.
-$("url").oninput = () => {
-  if ($("url").value.trim()) {
-    file = null;
-    $("file").value = "";
-    drop.classList.remove("has-file");
-    drop.innerHTML = `<div class="drop-main">Drop an audio file here, or click to choose</div>
-                      <div class="drop-sub">mp3, wav, m4a, flac</div>`;
+function computePeaks(buf, n) {
+  const chans = [...Array(buf.numberOfChannels).keys()].map(c => buf.getChannelData(c));
+  const step = Math.max(1, Math.floor(buf.length / n)), out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let m = 0;
+    for (const d of chans) for (let j = i * step, e = Math.min(d.length, j + step); j < e; j += 16) m = Math.max(m, Math.abs(d[j]));
+    out[i] = m;
   }
+  return out;
+}
+
+// the tokens are light-dark() pairs, which a canvas can't read: let an element resolve them
+function resolved(token) {
+  const el = document.createElement("span");
+  el.style.color = `var(${token})`; document.body.appendChild(el);
+  const c = getComputedStyle(el).color; el.remove();
+  return c;
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawWave);
+
+// the waveform: thin vertical strokes in the accent; the chosen section full strength, the rest faint
+function drawWave() {
+  const cv = $("wave"), dpr = devicePixelRatio || 1, w = cv.clientWidth, h = 96;
+  if (!w) return;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
+  const acc = resolved("--acc"), line = resolved("--line");
+  g.fillStyle = line; g.fillRect(0, h / 2, w, 1);
+  if (!peaks) return;
+  const cols = Math.floor(w / 3);
+  for (let x = 0; x < cols; x++) {
+    const p = peaks[Math.floor((x / cols) * peaks.length)], t = (x / cols) * total;
+    const inside = !sel || (t >= sel[0] && t <= sel[1]);
+    g.globalAlpha = inside ? 1 : 0.22;
+    g.fillStyle = acc;
+    const a = Math.max(1, p * (h / 2 - 4));
+    g.fillRect(x * 3, h / 2 - a, 2, a * 2);
+  }
+  g.globalAlpha = 1;
+}
+addEventListener("resize", drawWave);
+
+// drag to choose a section; it fills start and duration, which stay editable
+let dragAt = null;
+const timeAt = e => {
+  const r = $("wave").getBoundingClientRect();
+  return Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1) * total;
+};
+$("wave").onpointerdown = e => { if (!peaks) return; dragAt = timeAt(e); $("wave").setPointerCapture(e.pointerId); };
+$("wave").onpointermove = e => {
+  if (dragAt === null) return;
+  const t = timeAt(e);
+  if (Math.abs(t - dragAt) > total / 200) { sel = [Math.min(t, dragAt), Math.max(t, dragAt)]; showSel(); }
+};
+$("wave").onpointerup = () => { dragAt = null; };
+function showSel() {
+  if (sel) {
+    $("start").value = sel[0].toFixed(1);
+    $("duration").value = (sel[1] - sel[0]).toFixed(1);
+    $("sel-text").textContent = `${fmtT(sel[0])} to ${fmtT(sel[1])} · ${Math.round(sel[1] - sel[0])} s`;
+  } else {
+    $("start").value = ""; $("duration").value = "";
+    $("sel-text").textContent = "whole song · drag across the waveform to transcribe only a section";
+  }
+  $("sel-clear").classList.toggle("hidden", !sel);
+  drawWave();
+}
+$("sel-clear").onclick = () => { sel = null; showSel(); };
+const fromInputs = () => {
+  if (!peaks) return;
+  const a = parseFloat($("start").value) || 0, d = parseFloat($("duration").value);
+  sel = (a > 0 || d > 0) ? [a, d > 0 ? Math.min(total, a + d) : total] : null;
+  $("sel-clear").classList.toggle("hidden", !sel);
+  drawWave();
+};
+$("start").oninput = fromInputs;
+$("duration").oninput = fromInputs;
+
+// ---- a link instead of a file
+function showLinkOnly(on) { document.querySelectorAll(".link-only").forEach(e => e.classList.toggle("hidden", !on)); }
+$("url").oninput = () => {
+  const has = !!$("url").value.trim();
+  if (has) { file = null; $("file").value = ""; }
+  showLinkOnly(has);
   refresh();
 };
 
@@ -324,7 +454,7 @@ function refresh() {
   const u = $("url").value.trim();
   const ok = !!file || /^https?:\/\/\S+$/i.test(u);
   $("go").disabled = !ok;
-  $("go").textContent = (!file && u) ? "Fetch & transcribe" : "Transcribe";
+  $("go").textContent = (!file && u) ? "Fetch and transcribe" : "Transcribe";
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const numOr = (id, d) => $(id).value === "" ? d : parseFloat($(id).value);
