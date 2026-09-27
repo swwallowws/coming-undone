@@ -74,7 +74,10 @@ def _bars(manifest: dict, pm: pretty_midi.PrettyMIDI, offset: float, duration: f
     return bpm, "4/4", [t for t in bars if 0 <= t <= duration]
 
 
-def freeze(job_dir, out_dir, *, encode: bool = True, title: str | None = None) -> dict:
+def freeze(job_dir, out_dir, *, encode: bool = True, title: str | None = None,
+           min_db: float | None = None) -> dict:
+    """min_db leaves out any stem quieter than that (RMS, dBFS): a song with no singer still
+    gets a vocals stem, and the notes written from its bleed aren't worth showing."""
     job, out = pathlib.Path(job_dir), pathlib.Path(out_dir)
     mids = sorted(job.glob("*.mid"))
     if not mids:
@@ -104,6 +107,10 @@ def freeze(job_dir, out_dir, *, encode: bool = True, title: str | None = None) -
     parts = []
     for stem in order:
         y, sr = sf.read(str(stems[stem]), dtype="float32", always_2d=True)
+        if min_db is not None:
+            rms = float(np.sqrt(np.mean(np.square(y)))) if y.size else 0.0
+            if rms <= 0.0 or 20 * np.log10(rms) < min_db:
+                continue
         if mix is None:
             mix, mix_sr = np.zeros((round(duration * sr), y.shape[1]), dtype="float32"), sr
         if sr == mix_sr and y.shape[1] == mix.shape[1]:
@@ -151,8 +158,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--title", default=None, help="song title on the page (default: the MIDI's name)")
     p.add_argument("--no-encode", dest="encode", action="store_false",
                    help="copy the WAVs instead of encoding mp3")
+    p.add_argument("--min-db", type=float, default=-60.0,
+                   help="leave out stems quieter than this RMS level in dBFS (default -60; "
+                        "use --keep-silent to keep every stem)")
+    p.add_argument("--keep-silent", action="store_true", help="keep near-silent stems too")
     a = p.parse_args(argv)
-    data = freeze(a.job_dir, a.out_dir, encode=a.encode, title=a.title)
+    data = freeze(a.job_dir, a.out_dir, encode=a.encode, title=a.title,
+                  min_db=None if a.keep_silent else a.min_db)
     counts = ", ".join(f"{q['name']}({len(q['notes'])})" for q in data["parts"])
     print(f"froze {data['title']}: {data['duration']:.1f}s, {len(data['bars'])} bars, {counts}")
     print(f"serve {a.out_dir} and open /try/")

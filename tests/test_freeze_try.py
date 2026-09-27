@@ -83,6 +83,31 @@ def test_freeze_puts_notes_and_bars_on_the_stems_timeline(tmp_path):
     assert bass["notes"][0][:2] == pytest.approx([0.25, 0.5])
 
 
+def _tone_wav(path: pathlib.Path, seconds: float = 1.0, sr: int = 8000) -> None:
+    import math
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frames = b"".join(
+        int(8000 * math.sin(2 * math.pi * 110 * i / sr)).to_bytes(2, "little", signed=True)
+        for i in range(int(seconds * sr)))
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(frames)
+
+
+def test_freeze_can_leave_out_silent_stems(tmp_path):
+    # a song with no singer still gets a vocals stem: near-silent bleed, and its "notes" are noise
+    job = _job(tmp_path)
+    _tone_wav(job / "stems" / "bass.wav")
+    out = tmp_path / "dist"
+    data = _load().freeze(job, out, encode=False, min_db=-60.0)
+    assert [p["id"] for p in data["parts"]] == ["bass"]      # the silent drums stem is left out
+
+    kept = _load().freeze(job, tmp_path / "all", encode=False)
+    assert sorted(p["id"] for p in kept["parts"]) == ["bass", "drums"]   # default keeps every stem
+
+
 def test_freeze_copies_the_page_and_the_design_system(tmp_path):
     out = tmp_path / "dist"
     _load().freeze(_job(tmp_path), out, encode=False)
