@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en" data-category="transcribe">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Try stemscribe</title>
+    <script>
+      // For framing (the showcase site): ?theme=paper|night picks the mode
+      // before first paint, otherwise the system scheme applies; ?embed=1
+      // drops the page's own header, since the framing page names the tool.
+      (function () {
+        var q = new URLSearchParams(location.search);
+        var t = q.get("theme");
+        if (t === "paper" || t === "night") document.documentElement.dataset.theme = t;
+        if (q.get("embed") === "1") document.documentElement.classList.add("embed");
+      })();
+    </script>
+    <link rel="stylesheet" href="../vendor/design/tokens.css" />
+    <link rel="stylesheet" href="../vendor/design/steprail.css" />
+    <link rel="stylesheet" href="try.css" />
+  </head>
+  <body>
+    <header class="try-head">
+      <strong class="wordmark">stemscribe</strong>
+      <span class="try-lead">One song in: its parts as audio stems and as labelled MIDI.</span>
+    </header>
+    <main class="try">
+      <nav id="rail" class="try-rail" aria-label="Steps"></nav>
+      <section class="try-live" aria-label="Demo">
+        <p id="message" class="try-message" role="status">Loading the song…</p>
+        <div class="try-row">
+          <button id="play" type="button" disabled>Play</button>
+          <span id="song" class="try-song"></span>
+          <span id="time" class="try-fine try-time"></span>
+        </div>
+        <canvas id="wave" class="try-wave" aria-label="Waveform of the full mix; click to jump"></canvas>
+        <div class="try-row">
+          <span class="try-label" id="parts-label">Parts</span>
+          <span id="parts" class="try-parts" role="group" aria-labelledby="parts-label"></span>
+        </div>
+        <div class="try-row">
+          <span class="try-label" id="mode-label">Hear the part as</span>
+          <span class="try-switch" role="group" aria-labelledby="mode-label">
+            <button id="mode-audio" type="button" aria-pressed="true" disabled>Audio</button>
+            <button id="mode-midi" type="button" aria-pressed="false" disabled>MIDI</button>
+          </span>
+        </div>
+        <div class="try-stage">
+          <canvas id="roll"></canvas>
+          <p id="empty" class="try-empty">Solo a part and flip it to MIDI to see the notes stemscribe wrote.</p>
+        </div>
+        <p class="try-fine">A frozen run on one song, played in the browser. The full tool runs on any song from the command line or its local web page.</p>
+      </section>
+    </main>
+    <script type="module" src="try.js"></script>
+  </body>
+</html>

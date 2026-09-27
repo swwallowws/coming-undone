@@ -1,0 +1,473 @@
+// Guided stemscribe demo over one frozen run (data.json from scripts/freeze_try.py):
+// press play, solo a part, flip it from its audio stem to the MIDI stemscribe wrote.
+// Every source runs off one AudioContext clock, made inside the first Play click.
+import { stepRail } from "../vendor/design/steprail.js";
+
+const $ = (id) => document.getElementById(id);
+const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+
+const rail = stepRail($("rail"), {
+  steps: [
+    { id: "play", label: "Press play" },
+    { id: "solo", label: "Solo a part", hint: "Drums, bass, vocals or the rest." },
+    { id: "midi", label: "Hear what was written", hint: "Flip the part from audio to its MIDI." },
+  ],
+  onReset: startOver,
+});
+
+// what the visitor has done so far; the rail ticks in order, so a step done early
+// is ticked as soon as the ones before it are
+const did = { play: false, solo: false, midi: false };
+function progress() {
+  for (const id of ["play", "solo", "midi"]) if (did[id]) rail.done(id);
+}
+
+let data = null;
+let buffers = {}; // part id -> AudioBuffer
+let peaks = null;
+let ctx = null, master = null, gains = {}, sources = [], synthBus = null, noise = null;
+let playing = false, pos = 0, t0 = 0, scheduledTo = 0, timer = 0;
+let solo = null; // part id or null
+const modes = {}; // part id -> "audio" | "midi"
+
+const songTime = () => (playing ? pos + (ctx.currentTime - t0) : pos);
+const part = (id) => data.parts.find((p) => p.id === id);
+const midiOn = () => solo !== null && modes[solo] === "midi";
+
+// ---------- loading
+
+async function load() {
+  let res;
+  try {
+    res = await fetch("data.json");
+  } catch {
+    res = null;
+  }
+  if (!res || !res.ok) {
+    notBuilt();
+    return;
+  }
+  data = await res.json();
+  $("song").textContent = data.title;
+  $("time").textContent = `0:00 / ${fmtT(data.duration)}`;
+  buildParts();
+  try {
+    // decode ahead of the click, so Play sounds at once; an AudioBuffer is not
+    // tied to the context that decoded it
+    const dec = new OfflineAudioContext(2, 1, 44100);
+    const get = async (url) => dec.decodeAudioData(await (await fetch(url)).arrayBuffer());
+    const [mix, ...stems] = await Promise.all([get(data.mix), ...data.parts.map((p) => get(p.audio))]);
+    peaks = computePeaks(mix, 1200);
+    data.parts.forEach((p, i) => (buffers[p.id] = stems[i]));
+  } catch (e) {
+    $("message").textContent = "The audio did not load. Reload the page to try again.";
+    console.warn(e);
+    return;
+  }
+  $("message").textContent = "";
+  $("play").disabled = false;
+  drawWave();
+  drawRoll();
+}
+
+function notBuilt() {
+  const m = $("message");
+  m.innerHTML = "demo data not built: run <code>stemscribe/scripts/freeze_try.py</code>";
+  $("play").disabled = true;
+  $("empty").textContent = "No song frozen yet.";
+}
+
+function buildParts() {
+  const box = $("parts");
+  box.innerHTML = "";
+  const all = document.createElement("button");
+  all.type = "button";
+  all.textContent = "all";
+  all.dataset.part = "";
+  box.append(all);
+  for (const p of data.parts) {
+    modes[p.id] = "audio";
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = p.name;
+    b.dataset.part = p.id;
+    box.append(b);
+  }
+  box.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    setSolo(b.dataset.part || null);
+  });
+  paintControls();
+}
+
+// ---------- audio
+
+function ensureContext() {
+  if (!ctx) {
+    ctx = new AudioContext();
+    master = ctx.createGain();
+    master.gain.value = 0.9;
+    master.connect(ctx.destination);
+    for (const p of data.parts) {
+      gains[p.id] = ctx.createGain();
+      gains[p.id].connect(master);
+    }
+    noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    setGains(true);
+  }
+  if (ctx.state === "suspended") ctx.resume();
+}
+
+function audible(id) {
+  if (solo === null) return true;
+  return id === solo && modes[id] === "audio";
+}
+
+function setGains(now = false) {
+  if (!ctx) return;
+  for (const p of data.parts) {
+    const g = gains[p.id].gain, v = audible(p.id) ? 1 : 0;
+    if (now) g.value = v;
+    else g.setTargetAtTime(v, ctx.currentTime, 0.015);
+  }
+}
+
+// a fresh synth bus: dropping the old one silences whatever it had queued
+function newSynthBus() {
+  if (synthBus) {
+    synthBus.gain.setTargetAtTime(0, ctx.currentTime, 0.01);
+    const old = synthBus;
+    setTimeout(() => old.disconnect(), 200);
+  }
+  synthBus = ctx.createGain();
+  synthBus.gain.value = 0.5;
+  synthBus.connect(master);
+  scheduledTo = songTime();
+}
+
+function play() {
+  ensureContext();
+  if (pos >= data.duration - 0.05) pos = 0;
+  t0 = ctx.currentTime + 0.05;
+  sources = data.parts.map((p) => {
+    const s = ctx.createBufferSource();
+    s.buffer = buffers[p.id];
+    s.connect(gains[p.id]);
+    s.start(t0, Math.min(pos, s.buffer.duration));
+    return s;
+  });
+  playing = true;
+  newSynthBus();
+  scheduledTo = pos;
+  schedule();
+  timer = setInterval(schedule, 50);
+  $("play").textContent = "Pause";
+  requestAnimationFrame(frame);
+}
+
+function pause(to = songTime()) {
+  if (!playing) return;
+  pos = Math.max(0, Math.min(to, data.duration));
+  playing = false;
+  clearInterval(timer);
+  for (const s of sources) {
+    try { s.stop(); } catch {}
+  }
+  sources = [];
+  if (synthBus) newSynthBus();
+  $("play").textContent = "Play";
+  paintTime();
+  drawWave();
+  drawRoll();
+}
+
+// look ahead 200 ms and queue the soloed part's notes on the shared clock
+function schedule() {
+  if (!playing) return;
+  const now = songTime();
+  if (now >= data.duration) {
+    pause(data.duration);
+    pos = 0;
+    return;
+  }
+  if (!midiOn()) {
+    scheduledTo = now + 0.2;
+    return;
+  }
+  const from = Math.max(scheduledTo, now), to = now + 0.2;
+  const p = part(solo);
+  for (const n of p.notes) {
+    if (n[0] >= from && n[0] < to) note(p, n, t0 + (n[0] - pos));
+  }
+  scheduledTo = to;
+}
+
+function note(p, [s, e, pitch, vel], at) {
+  const amp = 0.15 + 0.55 * (vel / 127);
+  if (p.drums) return hit(pitch, amp, at);
+  const len = Math.min(Math.max(e - s, 0.06), 4);
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = "triangle";
+  o.frequency.value = 440 * 2 ** ((pitch - 69) / 12);
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(amp * 0.6, at + 0.006);
+  g.gain.setTargetAtTime(amp * 0.4, at + 0.02, 0.15);
+  g.gain.setTargetAtTime(0, at + len, 0.04);
+  o.connect(g).connect(synthBus);
+  o.start(at);
+  o.stop(at + len + 0.3);
+}
+
+// drums: noise bursts, filtered by what the General MIDI note is
+function hit(pitch, amp, at) {
+  const kick = pitch === 35 || pitch === 36;
+  const hat = [42, 44, 46, 51, 53, 59].includes(pitch);
+  const snare = [37, 38, 39, 40].includes(pitch);
+  const src = ctx.createBufferSource();
+  src.buffer = noise;
+  const f = ctx.createBiquadFilter();
+  f.type = kick ? "lowpass" : hat ? "highpass" : "bandpass";
+  f.frequency.value = kick ? 140 : hat ? 7000 : snare ? 1800 : 3200;
+  const g = ctx.createGain();
+  const len = kick ? 0.18 : hat ? (pitch === 46 ? 0.25 : 0.05) : 0.14;
+  const peak = amp * (kick ? 2.2 : hat ? 0.35 : 0.8);
+  g.gain.setValueAtTime(peak, at);
+  g.gain.exponentialRampToValueAtTime(0.001, at + len);
+  src.connect(f).connect(g).connect(synthBus);
+  src.start(at, Math.random() * 0.5);
+  src.stop(at + len + 0.02);
+}
+
+// ---------- controls
+
+$("play").addEventListener("click", () => {
+  if (!data) return;
+  if (playing) {
+    pause();
+    return;
+  }
+  play();
+  did.play = true;
+  progress();
+});
+
+function setSolo(id) {
+  // "all", or pressing the soloed part again, goes back to the full mix
+  solo = id === null || id === solo ? null : id;
+  if (solo !== null) did.solo = true;
+  if (ctx) {
+    setGains();
+    if (playing) newSynthBus();
+  }
+  paintControls();
+  drawRoll();
+  progress();
+}
+
+function setMode(m) {
+  if (solo === null) return;
+  modes[solo] = m;
+  if (m === "midi") did.midi = true;
+  if (ctx) {
+    setGains();
+    if (playing) newSynthBus();
+  }
+  paintControls();
+  drawRoll();
+  progress();
+}
+$("mode-audio").addEventListener("click", () => setMode("audio"));
+$("mode-midi").addEventListener("click", () => setMode("midi"));
+
+function paintControls() {
+  for (const b of $("parts").querySelectorAll("button")) {
+    b.setAttribute("aria-pressed", String((b.dataset.part || null) === solo));
+  }
+  const m = solo === null ? "audio" : modes[solo];
+  $("mode-audio").disabled = $("mode-midi").disabled = solo === null;
+  $("mode-audio").setAttribute("aria-pressed", String(m === "audio"));
+  $("mode-midi").setAttribute("aria-pressed", String(m === "midi"));
+}
+
+function startOver() {
+  pause();
+  pos = 0;
+  solo = null;
+  for (const id of Object.keys(modes)) modes[id] = "audio";
+  did.play = did.solo = did.midi = false;
+  if (ctx) setGains();
+  paintControls();
+  paintTime();
+  drawWave();
+  drawRoll();
+}
+
+$("wave").addEventListener("click", (e) => {
+  if (!data) return;
+  const r = $("wave").getBoundingClientRect();
+  const t = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1) * data.duration;
+  if (playing) {
+    pause(t);
+    play();
+  } else {
+    pos = t;
+    paintTime();
+    drawWave();
+    drawRoll();
+  }
+});
+
+// ---------- drawing (tokens are light-dark() pairs a canvas can't read: resolve them on an element)
+
+function resolved(token) {
+  const el = document.createElement("span");
+  el.style.color = `var(${token})`;
+  document.body.appendChild(el);
+  const c = getComputedStyle(el).color;
+  el.remove();
+  return c;
+}
+const toRgb = (token) => resolved(token).match(/[\d.]+/g).slice(0, 3).map(Number);
+const rgbStr = (c) => `rgb(${c.map(Math.round).join(",")})`;
+const mixRgb = (a, b, p) => rgbStr(a.map((x, i) => x * p + b[i] * (1 - p)));
+
+function computePeaks(buf, n) {
+  const chans = [...Array(buf.numberOfChannels).keys()].map((c) => buf.getChannelData(c));
+  const step = Math.max(1, Math.floor(buf.length / n)), out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let m = 0;
+    for (const d of chans) for (let j = i * step, e = Math.min(d.length, j + step); j < e; j += 16) m = Math.max(m, Math.abs(d[j]));
+    out[i] = m;
+  }
+  return out;
+}
+
+function sizeCanvas(cv) {
+  const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return null;
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(h * dpr);
+  const g = cv.getContext("2d");
+  g.scale(dpr, dpr);
+  return { g, w, h };
+}
+
+// the mix: thin vertical strokes in the accent; what has played full strength, the rest faint
+function drawWave() {
+  const c = sizeCanvas($("wave"));
+  if (!c) return;
+  const { g, w, h } = c;
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = resolved("--line");
+  g.fillRect(0, h / 2, w, 1);
+  if (!peaks || !data) return;
+  const acc = resolved("--acc"), now = songTime(), cols = Math.floor(w / 3);
+  let top = 0;
+  for (const p of peaks) top = Math.max(top, p);
+  const scale = top > 0 ? 1 / top : 1;
+  g.fillStyle = acc;
+  for (let x = 0; x < cols; x++) {
+    const p = peaks[Math.floor((x / cols) * peaks.length)] * scale, t = (x / cols) * data.duration;
+    g.globalAlpha = t <= now && now > 0 ? 1 : 0.28;
+    const a = Math.max(1, p * (h / 2 - 4));
+    g.fillRect(x * 3, h / 2 - a, 2, a * 2);
+  }
+  g.globalAlpha = 1;
+}
+
+// the soloed part's MIDI (design/roll.md): key bands, bar lines from the grid, softer
+// notes paler, sounding notes full strength. Four bars at a time; the view turns a
+// page when the playhead reaches its edge, so nothing scrolls under the eye.
+function barLen() {
+  const b = data.bars;
+  return b.length > 1 ? b[1] - b[0] : 2;
+}
+function view(now) {
+  const len = 4 * barLen(), b = data.bars;
+  const first = b.length ? b[0] - Math.ceil(b[0] / barLen()) * barLen() : 0;
+  const k = Math.max(0, Math.floor((now - first) / len));
+  return [first + k * len, first + (k + 1) * len];
+}
+
+function drawRoll() {
+  const cv = $("roll");
+  const show = !!data && midiOn();
+  cv.classList.toggle("off", !show);
+  $("empty").hidden = show || !data;
+  if (!data) return;
+  if (!show) {
+    $("empty").textContent =
+      solo === null
+        ? "Solo a part and flip it to MIDI to see the notes stemscribe wrote."
+        : `Flip ${part(solo).name} to MIDI to see its notes.`;
+  } else if (!part(solo).notes.length) {
+    // a stem can come out with no notes (nothing above the floor); say so plainly
+    cv.classList.add("off");
+    $("empty").hidden = false;
+    $("empty").textContent = `No notes were written for ${part(solo).name} in this section.`;
+    return;
+  }
+  const c = sizeCanvas(cv);
+  if (!c || !show) return;
+  const { g, w, h } = c;
+  const p = part(solo), now = songTime();
+  const ground = toRgb("--ground-2"), band = toRgb("--band"), ink = toRgb("--ink"), acc = toRgb("--acc");
+  g.fillStyle = rgbStr(ground);
+  g.fillRect(0, 0, w, h);
+  const ps = p.notes.map((n) => n[2]);
+  const lo = (ps.length ? Math.min(...ps) : 48) - 1, hi = (ps.length ? Math.max(...ps) : 72) + 1;
+  const rh = h / (hi - lo + 1), y = (q) => h - (q - lo + 1) * rh;
+  if (!p.drums) {
+    g.fillStyle = rgbStr(band);
+    for (let q = lo; q <= hi; q++) if ([1, 3, 6, 8, 10].includes(((q % 12) + 12) % 12)) g.fillRect(0, y(q), w, rh);
+  }
+  const [a, b] = view(now), xs = w / (b - a), x = (t) => (t - a) * xs;
+  g.fillStyle = resolved("--line");
+  for (const t of data.bars) if (t >= a && t <= b) g.fillRect(Math.round(x(t)), 0, 1, h);
+  for (const [s, e, q, v] of p.notes) {
+    if (e < a || s > b) continue;
+    const on = playing && now >= s && now < e + (p.drums ? 0.08 : 0);
+    g.fillStyle = on ? rgbStr(acc) : mixRgb(acc, ground, 0.35 + 0.65 * (v / 127));
+    const nx = x(s), nw = Math.max(p.drums ? 3 : 1, (e - s) * xs - 1), ny = y(q), nh = Math.max(1, rh - 1);
+    g.fillRect(nx, ny, nw, nh);
+    if (on && nh > 2) {
+      g.strokeStyle = rgbStr(ink);
+      g.strokeRect(nx + 0.5, ny + 0.5, nw - 1, nh - 1);
+    }
+  }
+  if (now > 0 && !reduced.matches) {
+    g.fillStyle = rgbStr(ink);
+    g.fillRect(Math.round(x(now)), 0, 1, h);
+  }
+}
+
+function paintTime() {
+  if (data) $("time").textContent = `${fmtT(songTime())} / ${fmtT(data.duration)}`;
+}
+
+let lastWave = 0;
+function frame(ts) {
+  if (!playing) return;
+  paintTime();
+  drawRoll();
+  if (ts - lastWave > 250) {
+    drawWave();
+    lastWave = ts;
+  }
+  requestAnimationFrame(frame);
+}
+
+addEventListener("resize", () => {
+  drawWave();
+  drawRoll();
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  drawWave();
+  drawRoll();
+});
+
+load();

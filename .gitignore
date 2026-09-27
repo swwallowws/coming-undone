@@ -22,6 +22,11 @@ inputs/
 *.webm
 !tests/**/*.mid
 
+# guided /try/ demo: the stemscribe run and the frozen page built from it
+# (made from a copyrighted test song, local only)
+try-work/
+try-dist/
+
 # secrets (yt-dlp cookie exports, env files, HF tokens)
 .env
 .env.*
