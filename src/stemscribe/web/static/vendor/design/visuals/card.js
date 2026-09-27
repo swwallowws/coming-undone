@@ -56,9 +56,22 @@ const SYMBOL_ATTRS = new Set([
 export const allowedElement = (name) => SYMBOL_ELEMENTS.has(String(name).toLowerCase());
 export const allowedAttr = (name) => SYMBOL_ATTRS.has(String(name).toLowerCase());
 
+// Values are checked too: a paint like url(https://...) would make the page
+// fetch. Compared lowercased with whitespace and control characters removed,
+// so "u r l(" or "java\tscript:" cannot slip past.
+const BANNED_IN_VALUE = ['url(', 'javascript:', 'data:', '&', '\\'];
+const PAINT = /^(none|currentcolor|var\(--[a-z0-9-]+\)|#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla)\([0-9a-z.,%/+-]*\))$/;
+export function allowedValue(name, value) {
+  const v = String(value).toLowerCase().replace(/[\s\u0000-\u001f\u007f]/g, '');
+  if (BANNED_IN_VALUE.some((b) => v.includes(b))) return false;
+  const n = String(name).toLowerCase();
+  if (n === 'fill' || n === 'stroke') return PAINT.test(v);
+  return true;
+}
+
 function clean(el) {
   for (const a of [...el.attributes]) {
-    if (!allowedAttr(a.name)) el.removeAttribute(a.name);
+    if (!allowedAttr(a.name) || !allowedValue(a.name, a.value)) el.removeAttribute(a.name);
   }
   for (const child of [...el.children]) {
     if (allowedElement(child.localName)) clean(child);
