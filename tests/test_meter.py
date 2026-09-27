@@ -17,6 +17,15 @@ def test_parse_defaults():
     assert Meter.parse("9/8:3+3+3").groups == (3, 3, 3)
 
 
+def test_default_grouping_rule_matches_its_docstring():
+    """The reference rule rearranged adopts (grid._default_groups)."""
+    want = {"6/4": (1,) * 6, "2/2": (1, 1), "1/8": (1,), "3/8": (3,), "2/8": (2,),
+            "4/8": (2, 2), "8/8": (2, 2, 2, 2), "5/8": (2, 3), "7/8": (2, 2, 3),
+            "11/8": (2, 2, 2, 2, 3), "9/16": (2, 2, 2, 3), "15/8": (3,) * 5}
+    for spec, groups in want.items():
+        assert Meter.parse(spec).groups == groups, spec
+
+
 def test_parse_rejects_bad_groups():
     with pytest.raises(ValueError):
         Meter.parse("9/8:2+2+2")          # groups must sum to 9
@@ -75,6 +84,78 @@ def test_bar_one_found_in_meter(spec, tracked):
     assert info["meter"] == spec
     ts = out.time_signature_changes[0]
     assert (ts.numerator, ts.denominator) == (meter.num, meter.den)
+
+
+def test_eighth_tracker_with_some_sixteenths_keeps_the_eighth_pulse():
+    """A slow 6/8 ballad: a note on every eighth (180) plus 16ths on 30% of the off
+    positions, and the tracker reported the eighth. The 16th grid fits tighter, but it
+    is not a 16th-pulse song: the pulse stays the eighth and the bar six of them."""
+    meter = Meter.parse("6/8")
+    rng = np.random.default_rng(3)
+    pulse = 60.0 / 180
+    inst = pretty_midi.Instrument(0, name="comping")
+    for k in range(24 * 6):
+        t = k * pulse
+        inst.notes.append(pretty_midi.Note(110 if k % 6 == 0 else 70, 48 if k % 6 == 0 else 60,
+                                           t, t + pulse * 0.4))
+        if rng.random() < 0.3:           # a C too: this test is about the pulse, not harmony
+            inst.notes.append(pretty_midi.Note(60, 72, t + pulse / 2, t + pulse * 0.9))
+    pm = pretty_midi.PrettyMIDI()
+    pm.instruments.append(inst)
+    _, info, _ = G.apply(pm, 180.0, meter=meter)
+    assert info["bpm"] == pytest.approx(180.0, rel=1e-3)
+    g = G.Grid(info["bpm"], info["anchor"], meter)
+    assert g.bar == pytest.approx(2.0, rel=1e-3)
+    off = info["first_bar"] % g.bar
+    assert min(off, g.bar - off) < 0.02
+
+
+def test_a_real_sixteenth_pulse_still_wins():
+    """The tracker reported a quarter (90) and a note sits on every eighth: the finer
+    pulse's off positions are all filled, so beat/2 still wins."""
+    meter = Meter.parse("6/8")
+    pm, t0 = _song(meter, bpm_pulse=180.0, bars=24, pickup_pulses=0)
+    _, info, _ = G.apply(pm, 90.0, meter=meter)
+    assert info["bpm"] == pytest.approx(180.0, rel=1e-3)
+
+
+AUG = [(60, 64, 68), (61, 65, 69), (62, 66, 70), (63, 67, 71)]   # four disjoint triads
+
+
+def _harmony_song(meter: Meter, pickup_pulses: int, per: str, bars: int = 24):
+    """Every pulse plays the current chord at one velocity, so loudness says nothing.
+    per="bar": the chord changes on each bar line. per="group": it changes on every
+    group start (the triads share no pitch class, so every change is equally big)."""
+    pm = pretty_midi.PrettyMIDI()
+    inst = pretty_midi.Instrument(0, name="comping")
+    pulse = 60.0 / 180.0
+    t0 = pickup_pulses * pulse
+    n = 0
+    for b in range(bars):
+        for k in range(meter.pulses):
+            if k == 0 if per == "bar" else k in meter.accents:
+                n += 1
+            start = t0 + (b * meter.pulses + k) * pulse
+            for p in AUG[n % 4]:
+                inst.notes.append(pretty_midi.Note(80, p, start, start + pulse * 0.9))
+    pm.instruments.append(inst)
+    return pm, t0
+
+
+@pytest.mark.parametrize("spec, tracked, pickup, per", [
+    ("6/8", 60.0, 0, "bar"), ("6/8", 60.0, 2, "bar"), ("6/8", 90.0, 2, "bar"),
+    ("9/8", 90.0, 0, "bar"), ("9/8", 90.0, 2, "bar"),
+    ("9/8", 90.0, 0, "group"), ("9/8", 90.0, 2, "group"),     # only the 2+2+2+3 shape tells
+])
+def test_bar_one_from_harmony_and_groups_at_even_velocity(spec, tracked, pickup, per):
+    meter = Meter.parse(spec)
+    pm, t0 = _harmony_song(meter, pickup, per)
+    _, info, _ = G.apply(pm, tracked, meter=meter)
+    assert info["bpm"] == pytest.approx(180.0, rel=1e-3)
+    g = G.Grid(info["bpm"], info["anchor"], meter)
+    off = (info["first_bar"] - t0) % g.bar
+    assert min(off, g.bar - off) < 0.02
+    assert info["bar_one_confidence"] > 0.05
 
 
 @pytest.mark.parametrize("spec", ["3/4", "6/8", "9/8", "7/8"])

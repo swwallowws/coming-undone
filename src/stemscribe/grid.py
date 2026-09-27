@@ -32,6 +32,8 @@ MIN_ALIGNMENT = 0.5      # below this no track sits on any steady grid
 TEMPO_PRIOR = 120.0      # among equally good tempi, the one nearest this wins
 RESOLUTION = 960
 PULSE_TOL = 0.002        # s: a finer pulse must sit tighter than a coarser one by this
+FINER_GAIN = 0.5         # ...and its mean offset must be under this share of the coarser one's
+OFF_FILL = 0.6           # ...and this share of its off positions must be played
 ACCENT_WEIGHT = 0.5      # in odd meters, how much loud onsets count next to harmony
 GROUP_WEIGHT = 0.5       # how much the other group starts count next to the downbeat
 
@@ -39,8 +41,18 @@ _DENOMINATORS = (1, 2, 4, 8, 16, 32)
 
 
 def _default_groups(num: int, den: int) -> tuple[int, ...]:
-    """How a bar is grouped when the meter does not say: one group per pulse in simple
-    meters (x/4, x/2), threes in compound ones (6/8, 12/8), and 9/8 as 2+2+2+3."""
+    """How a bar is grouped when the meter does not say. This rule is the reference
+    (rearranged adopts it), applied in this order:
+
+    - denominator 4 or less (x/4, x/2, x/1), or a numerator of 1: one group per pulse
+      (3/4 is 1+1+1, 6/4 is 1+1+1+1+1+1);
+    - otherwise (x/8, x/16, x/32):
+      - 9: 2+2+2+3 (the aksak 9/8; write 9/8:3+3+3 for compound 9/8);
+      - divisible by 3: threes (3/8 is 3, 6/8 is 3+3, 12/8 is 3+3+3+3);
+      - even: twos (2/8 is 2, 4/8 is 2+2, 8/8 is 2+2+2+2);
+      - odd: twos, then one three (5/8 is 2+3, 7/8 is 2+2+3, 11/8 is 2+2+2+2+3).
+
+    An explicit grouping ("7/8:3+2+2") always overrides this."""
     if den < 8 or num < 2:
         return (1,) * num
     if num == 9:
@@ -223,22 +235,51 @@ def _pulse_offset(g: Grid, times) -> float:
     return float(np.mean(np.abs((on - g.anchor + p / 2) % p - p / 2)))
 
 
+def _off_fill(fine: Grid, coarse: Grid, times) -> float:
+    """Of the fine grid's pulses that fall between the coarse grid's pulses (its "off"
+    positions), the share with an onset on them. A song really in the fine pulse plays
+    most of them; a song in the coarse pulse with the odd fill-in plays few."""
+    on = np.sort(_onsets(times))
+    if len(on) < 2:
+        return 0.0
+    p, tol = fine.beat, fine.beat / 4
+    t = fine.anchor + p * np.arange(np.ceil((on[0] - fine.anchor) / p),
+                                    np.floor((on[-1] - fine.anchor) / p) + 1)
+    c = coarse.beat
+    off = t[np.abs((t - coarse.anchor + c / 2) % c - c / 2) > tol]
+    if not len(off):
+        return 0.0
+    i = np.clip(np.searchsorted(on, off), 1, len(on) - 1)
+    near = np.minimum(np.abs(on[i] - off), np.abs(on[i - 1] - off))
+    return float(np.mean(near <= tol))
+
+
 def fit_pulse(tracks: dict[str, list[float]], beat_bpm: float, meter: Meter = DEFAULT):
     """The grid in the meter's pulse, from a tracked beat. In x/4 (and x/2) the pulse is
     the tracked beat. In x/8 a tracker may have followed the eighth, the quarter or the
-    dotted quarter, so try pulse = beat, beat/2 and beat/3 and keep the one the notes sit
-    tightest on (a finer pulse must win by PULSE_TOL, since finer grids fit coarser ones).
-    Returns (grid on a pulse, source track, {track: alignment}) or None."""
+    dotted quarter, so try pulse = beat, beat/2 and beat/3, coarsest first.
+
+    A finer grid always fits at least as tightly as a coarser one it contains, so a finer
+    pulse replaces the one kept so far only when it is clearly needed: its mean onset
+    offset is under FINER_GAIN of the kept one's (and PULSE_TOL smaller), and its own off
+    positions are mostly played (OFF_FILL). An eighth-pulse 6/8 ballad with some 16th
+    fill-ins keeps the eighth; a song with a note on every eighth under a quarter-note
+    tracker moves to beat/2. Returns (grid on a pulse, source track, {track: alignment})
+    or None."""
     best = None
     for d in ((1, 2, 3) if meter.den >= 8 else (1,)):
         res = fit_tracks(tracks, beat_bpm * d, meter=meter)
         if res is None or res[2][res[1]] < MIN_ALIGNMENT:
             continue
         g = align_to_beats(res[0], [t for v in tracks.values() for t in v])
-        off = _pulse_offset(g, tracks[res[1]])
-        if best is None or off < best[0] - PULSE_TOL:
-            best = (off, (g, res[1], res[2]))
-    return None if best is None else best[1]
+        src = tracks[res[1]]
+        off = _pulse_offset(g, src)
+        if best is None:
+            best = (off, g, (g, res[1], res[2]))
+        elif (off < FINER_GAIN * best[0] and off < best[0] - PULSE_TOL
+              and _off_fill(g, best[1], src) >= OFF_FILL):
+            best = (off, g, (g, res[1], res[2]))
+    return None if best is None else best[2]
 
 
 def _phase(g: Grid, weight_by_beat: np.ndarray) -> tuple[Grid, float]:
