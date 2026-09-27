@@ -496,8 +496,19 @@ def process(
             t0 = time.perf_counter()
             _emit("grid", "fitting the beat grid ...")
             pm = pretty_midi.PrettyMIDI(str(midi_path))
+            # Each track's own stem, moved onto the MIDI's (original) timeline, lets the
+            # grid see a latency past half a 16th. A stem that fails to load is skipped.
+            audio_env: dict = {}
+            for stem in list(stem_midis) + list(drum_midis):
+                try:
+                    y, sr = _sf.read(str(stem_paths[stem]), dtype="float32", always_2d=True)
+                    t, env = _grid.onset_envelope(y, sr)
+                except Exception as e:  # noqa: BLE001 - optional evidence, never fatal
+                    log.warning("no onset envelope for stem %r: %s", stem, e)
+                    continue
+                audio_env[_merge.track_for_stem(stem)[0]] = (t + prepared.offset, env)
             gridded, grid_info, gw = _grid.apply(pm, bpm, snap_notes=snap, downbeat=downbeat,
-                                                 meter=meter)
+                                                 meter=meter, audio=audio_env)
             for w in gw:
                 warnings.append(w)
                 log.warning(w)

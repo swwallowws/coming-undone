@@ -10,9 +10,10 @@ Why a pickup bar: note times are the contract (they refer to the original file),
 so the grid never moves a note. Bar lines are made real instead by a first bar of
 its own tempo that ends exactly on the first real bar line.
 
-Snapping is optional and separate: each track's latency (its median signed offset
-from the grid, ADT_STR drums ran 41 ms early) is removed first, or plain snapping
-pushes a model that runs early onto the previous 16th.
+Snapping is optional and separate: each track's latency (its signed offset from the
+grid) is removed first, or plain snapping pushes a model that runs early onto the
+previous 16th. The grid alone folds an offset into half a 16th, so with the stems'
+audio each track is also lined up against its own stem (see latency, audio_lag).
 
 Meters: the grid counts pulses, one per note of the meter's denominator (a quarter in
 4/4 and 3/4, an eighth in 6/8 and 9/8), and a bar is `meter.pulses` of them. The fine
@@ -354,10 +355,48 @@ def shift(g: Grid, beats: int) -> Grid:
     return replace(g, anchor=g.anchor + beats * g.beat)
 
 
-def latency(times, g: Grid) -> float:
-    """A track's typical signed offset from the grid, in seconds (negative = early)."""
+def latency(times, g: Grid, hint: float | None = None) -> float:
+    """A track's typical signed offset from the grid, in seconds (negative = early).
+
+    The grid alone only sees it folded into half a 16th either way: a track 195 ms late
+    at 114 BPM reads as +63 ms. hint: the offset measured some other way (audio_lag
+    against the source track's), which picks the whole number of 16ths; the grid's
+    median still gives the fine value."""
     t = np.asarray(list(times), dtype=float)
-    return float(np.median(g.signed(t))) if len(t) else 0.0
+    m = float(np.median(g.signed(t))) if len(t) else 0.0
+    if hint is None or not len(t):
+        return m
+    return m + round((hint - m) / g.sixteenth) * g.sixteenth
+
+
+LAG_WINDOW = 0.3          # s: audio_lag searches this far either way
+LAG_MIN_SCORE = 1.0       # below this the notes do not line up with the audio at any lag
+
+
+def onset_envelope(y, sr: int) -> tuple[np.ndarray, np.ndarray]:
+    """(times, envelope) of an audio's onset strength, about 3 ms a frame, z-scored."""
+    import librosa
+
+    y = np.asarray(y, dtype=np.float32)
+    if y.ndim > 1:
+        y = y.mean(axis=1)
+    hop = max(1, int(round(sr * 0.003)))
+    env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
+    env = (env - env.mean()) / (env.std() + 1e-9)
+    return np.arange(len(env)) * hop / sr, env
+
+
+def audio_lag(times, env_times, env, window: float = LAG_WINDOW) -> tuple[float, float]:
+    """A track's constant offset from its own audio (positive = the notes come later),
+    searched to +-window, and the score there: the mean z-scored onset strength under
+    the shifted onsets. The score is low (< LAG_MIN_SCORE) when nothing lines up."""
+    on = _onsets(times)
+    if not len(on) or not len(env):
+        return 0.0, 0.0
+    lags = np.arange(-window, window + 1e-9, 0.001)
+    score = np.array([np.interp(on - d, env_times, env, left=0.0, right=0.0).mean() for d in lags])
+    k = int(np.argmax(score))
+    return float(lags[k]), float(score[k])
 
 
 def fit_ms(times, g: Grid, latency_s: float = 0.0) -> float | None:
@@ -394,16 +433,23 @@ def snap(inst: pretty_midi.Instrument, g: Grid, latency_s: float | None = None):
 PHASE_WARN = 0.2          # bar "one" guesses below this confidence get a warning
 
 
+SOURCE_LAG_WARN = 0.1     # s: warn when the grid's own track sits this far off its audio
+
+
 def apply(pm: pretty_midi.PrettyMIDI, bpm_guess: float | None, snap_notes: bool = False,
-          downbeat: int | None = None, shift_beats: int = 0, meter: Meter = DEFAULT):
+          downbeat: int | None = None, shift_beats: int = 0, meter: Meter = DEFAULT,
+          audio: dict[str, tuple[np.ndarray, np.ndarray]] | None = None):
     """Fit the grid to `pm`'s tracks, stamp it, and optionally snap every track.
 
     bpm_guess: the tracked beat's tempo to search near (None searches 60-200 BPM, for a
     MIDI whose tempo map is a placeholder). meter: the bar (default 4/4); the grid's pulse
     is its denominator note, see fit_pulse. downbeat: 1 to meter.pulses, which pulse of
     the guessed bar is really "one" (the override). shift_beats: move bar "one" by whole
-    pulses after that. Returns (new pm, info for the manifest, warnings). With no usable
-    grid, `pm` comes back untouched and info["fitted"] is False."""
+    pulses after that. audio: per track name, the onset_envelope of its own stem on the
+    MIDI's timeline; a track and the source track that both line up with their audio
+    get their latency unfolded past half a 16th (see latency). Returns (new pm, info for
+    the manifest, warnings). With no usable grid, `pm` comes back untouched and
+    info["fitted"] is False."""
     warnings: list[str] = []
     tracks = {i.name or f"track {k}": [n.start for n in i.notes] for k, i in enumerate(pm.instruments)}
     if bpm_guess is None:
@@ -427,15 +473,28 @@ def apply(pm: pretty_midi.PrettyMIDI, bpm_guess: float | None, snap_notes: bool 
         later = "2" if P == 2 else ", ".join(map(str, range(2, P))) + f" or {P}"
         warnings.append(f"bar 'one' is a low-confidence guess ({conf:.2f}); check the bar lines "
                         f"and pass --downbeat {later} if 'one' is a later beat of the bar")
+    lags: dict[str, float] = {}           # only the tracks that line up with their audio
+    for k, inst in enumerate(pm.instruments):
+        name = inst.name or f"track {k}"
+        if audio and name in audio and inst.notes:
+            lag, score = audio_lag([n.start for n in inst.notes], *audio[name])
+            if score >= LAG_MIN_SCORE:
+                lags[name] = lag
+    if source in lags and abs(lags[source]) >= SOURCE_LAG_WARN:
+        warnings.append(f"the {source} notes run {lags[source] * 1000:+.0f} ms from their stem's "
+                        "audio; the grid follows the notes, so check the MIDI against the audio")
     per_track = {}
     out = stamp(pm, g)
     for k, inst in enumerate(pm.instruments):
         name = inst.name or f"track {k}"
         starts = [n.start for n in inst.notes]
-        lat = latency(starts, g)
+        hint = lags[name] - lags[source] if name in lags and source in lags else None
+        lat = latency(starts, g, hint)
         per_track[name] = {"alignment": round(fits[name], 4) if name in fits else None,
                            "latency_ms": round(lat * 1000, 1),
                            "grid_fit_ms": None if not starts else round(fit_ms(starts, g, lat), 1)}
+        if name in lags:
+            per_track[name]["audio_lag_ms"] = round(lags[name] * 1000, 1)
         if snap_notes and inst.notes:
             out.instruments[k], _ = snap(inst, g, lat)
     info = {"fitted": True, **g.as_dict(), "anchor": g.anchor, "source_track": source,

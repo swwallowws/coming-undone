@@ -195,8 +195,10 @@ torchcodec out.
 
 ADT_STR writes its own "GM custom" class numbers without converting them back;
 stemscribe maps each class to the first standard GM drum in it
-(`backends.ADT_STR_TO_GM`). It runs early: 41 ms on the reference song, which is
-why snapping removes each track's latency first (see Beat grid).
+(`backends.ADT_STR_TO_GM`). Its hits sit on the drums stem's audio (+5 ms on
+rearranged's donor song; on Elleri Ellerime about 15 ms ahead of MuScriptor's
+pitched tracks). An earlier "41 ms early" figure here was wrong: it was a 195 ms gap
+to MuScriptor's notes in an old build, folded into half a 16th (see Beat grid).
 
 CC BY-SA's share-alike clause covers adaptations of the model itself. My reading is
 that transcribed MIDI is output, not an adaptation, but that is a reading, not
@@ -327,14 +329,21 @@ by hand.
   `--downbeat` runs from 1 to the numerator. 4/4 stays the default and is unchanged.
 - **No note moves for the grid.** The first bar is a pickup of its own tempo that
   ends exactly on the first real bar line; from there the tempo is the fitted one.
-- **Snapping is opt-in (`--snap`).** It removes each track's latency (its median
-  signed offset from the grid) and then puts starts on 16ths, ends on 32nds and
-  keeps one hit per drum per 16th. Removing latency first matters: ADT_STR's drums
-  ran 41 ms early, and plain snapping pushed 4 hits in 10 onto the previous 16th.
-  Off by default because snapping deletes real feel.
+- **Snapping is opt-in (`--snap`).** It removes each track's latency (its signed
+  offset from the grid) and then puts starts on 16ths, ends on 32nds and keeps one
+  hit per drum per 16th. Off by default because snapping deletes real feel.
+- **Latency past half a 16th.** Measured against the grid alone, an offset folds
+  into half a 16th either way: a track 195 ms late at 114 BPM reads as +63 ms, and
+  snapping then moves every hit a 16th off. So each track is also lined up with its
+  own stem's onsets (cross-correlation within 300 ms), and the difference from the
+  grid's source track picks the whole number of 16ths; the grid still gives the fine
+  value. A track whose notes do not line up with its audio keeps the folded value. If
+  the source track itself runs 100 ms or more off its audio, a warning says so.
+  `stemscribe-grid` on a bare MIDI file has no audio and keeps the folded value.
 - **The manifest's `grid`** records the tempo, first bar line, source track, the
-  "one" confidence and any override, and per track its alignment, latency and
-  median distance to the grid (`grid_fit_ms`).
+  "one" confidence and any override, and per track its alignment, latency, median
+  distance to the grid (`grid_fit_ms`) and, when it lines up with its stem, its
+  offset from that audio (`audio_lag_ms`).
 - If no track sits on a steady grid, the MIDI keeps the detected tempo, nothing is
   snapped, and a warning says so. `--no-grid` skips the stage.
 

@@ -46,7 +46,7 @@ def fake_fallback(stem_wav, out_mid, **_):
 
 
 def fake_drums(stem_wav, out_mid, **_):
-    # like ADT_STR on the reference song: 40 ms early and loose
+    # a drum model 40 ms early and loose (within half a 16th, so the grid alone sees it)
     jitter = np.random.default_rng(1).uniform(-0.015, 0.015, int(SECONDS / BEAT))
     return _write([(36, 0.5 + i * BEAT - 0.04 + jitter[i], 0.05) for i in range(int(SECONDS / BEAT) - 2)],
                   out_mid, drum=True)
@@ -64,10 +64,10 @@ def run(tmp_path, monkeypatch):
     monkeypatch.setattr(backends, "drums_available", lambda: True)
 
     def go(**kw):
+        kw.setdefault("prepare", core.PrepareParams(trim_silence=False))
         return core.process(_wav(tmp_path / "in.wav"), out_dir=tmp_path / "out", backend="fake",
                             include_vocals_melody=False, instrumental=False, cache=False,
-                            tempo=BPM * 1.01, drums="fake-drums",
-                            prepare=core.PrepareParams(trim_silence=False), **kw)
+                            tempo=BPM * 1.01, drums="fake-drums", **kw)
     return go
 
 
@@ -103,6 +103,20 @@ def test_drums_are_available_only_with_the_model_requirements(monkeypatch):
     monkeypatch.setattr(importlib.util, "find_spec",
                         lambda name, *a: None if name == "transformers" else real(name, *a))
     assert backends.drums_available() is False
+
+
+def test_the_grid_gets_each_tracks_own_stem_on_the_midi_timeline(run, monkeypatch):
+    seen = {}
+    real = G.apply
+
+    def spy(pm, bpm, **kw):
+        seen.update(kw.get("audio") or {})
+        return real(pm, bpm, **kw)
+    monkeypatch.setattr(G, "apply", spy)
+    run(prepare=core.PrepareParams(trim_silence=False, start=2.0))
+    assert set(seen) == {"bass", "comping", "drums"}          # track names, not stem names
+    times, env = seen["drums"]
+    assert times[0] == pytest.approx(2.0, abs=0.01) and len(times) == len(env)
 
 
 def _main_with_bass(bass):
