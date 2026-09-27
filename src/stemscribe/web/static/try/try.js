@@ -9,14 +9,15 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
 const shell = demoShell($("demo"), {
   product: "stemscribe",
-  title: "Split a recording into its parts and write each one down as MIDI.",
-  intro: "One frozen song: press play, solo a part, then flip it to hear the MIDI stemscribe wrote for it.",
+  title: "Split a recording and write down every note.",
+  intro: "One song, processed ahead of time.",
   steps: [
-    { id: "play", label: "Press play" },
-    { id: "solo", label: "Solo a part", hint: "Drums, bass, vocals or the rest." },
-    { id: "midi", label: "Hear what was written", hint: "Flip the part from audio to its MIDI." },
+    { id: "play", label: "Press Play" },
+    { id: "solo", label: "Solo a part" },
+    { id: "midi", label: "Switch it to MIDI" },
   ],
   full: { coming: true },
+  endText: "Done. Explore freely.",
   onReset: startOver,
 });
 const rail = shell.rail;
@@ -66,7 +67,7 @@ async function load() {
     peaks = computePeaks(mix, 1200);
     data.parts.forEach((p, i) => (buffers[p.id] = stems[i]));
   } catch (e) {
-    $("message").textContent = "The audio did not load. Reload the page to try again.";
+    $("message").textContent = "The audio did not load. Reload to try again.";
     console.warn(e);
     return;
   }
@@ -405,15 +406,12 @@ function drawRoll() {
   $("empty").hidden = show || !data;
   if (!data) return;
   if (!show) {
-    $("empty").textContent =
-      solo === null
-        ? "Solo a part and flip it to MIDI to see the notes stemscribe wrote."
-        : `Flip ${part(solo).name} to MIDI to see its notes.`;
+    $("empty").textContent = "Notes show up here.";
   } else if (!part(solo).notes.length) {
     // a stem can come out with no notes (nothing above the floor); say so plainly
     cv.classList.add("off");
     $("empty").hidden = false;
-    $("empty").textContent = `No notes were written for ${part(solo).name} in this section.`;
+    $("empty").textContent = `No notes for ${part(solo).name} in this section.`;
     return;
   }
   const c = sizeCanvas(cv);
