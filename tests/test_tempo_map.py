@@ -158,6 +158,24 @@ def test_auto_picks_constant_for_a_steady_song_and_map_for_a_drifting_one():
     assert d["tempo"] == "map"
 
 
+def test_auto_keeps_constant_for_a_steady_but_loose_band():
+    """Loose drums (±40 ms) on a steady tempo sit past MAP_THRESHOLD, but a map fitted on
+    half the hits does no better than the constant grid on the other half: no drift to
+    follow, only looseness. (Đurđevdan's late excerpt: the map made bass and comping worse.)"""
+    rng = np.random.default_rng(5)
+    pm, beats, _ = drifting_song(bpm0=99.0, bpm1=99.0, bars=48)
+    for inst in pm.instruments:
+        for n in inst.notes:
+            d = rng.uniform(-0.04, 0.04)
+            n.start, n.end = n.start + d, n.end + d
+    _, c, _ = G.apply(pm, 99.0, tempo="constant")
+    assert c["fitted"] and c["constant_offset_16th"] > G.MAP_THRESHOLD
+    _, a, _ = G.apply(pm, 99.0)
+    assert a["tempo"] == "constant" and a["map_gain_16th"] < G.MAP_GAIN
+    _, d, _ = G.apply(drifting_song()[0], 99.0)
+    assert d["tempo"] == "map" and (d["map_gain_16th"] is None or d["map_gain_16th"] >= G.MAP_GAIN)
+
+
 def test_steady_four_four_output_is_byte_identical_to_before_the_map(tmp_path):
     """test_grid's _song, fitted, stamped and snapped in auto: the same bytes the
     constant-only grid wrote (hash taken before the tempo map existed)."""
@@ -173,6 +191,85 @@ def test_steady_four_four_output_is_byte_identical_to_before_the_map(tmp_path):
 # research/tempo-map/baseline_hash.py at f4e12a8 (the grid before the map)
 BEFORE_PLAIN = "80543a1429e9e91c8ca49ad30b4b2dc935ecb26856fd227ec288d89457dc9c8b"
 BEFORE_SNAPPED = "3460d251e331f1801b89e2d4ca3afde71e2b60021ef81616077d9ab4d1998915"
+
+
+# --- a requested meter is never dropped silently --------------------------------------
+def test_constant_mode_that_cannot_fit_warns_naming_the_meter():
+    pm, _, _ = drifting_song("9/8:2+2+2+3", 192.0, 204.0)
+    out, info, warnings = G.apply(pm, 198.0, meter=Meter.parse("9/8"), tempo="constant")
+    assert not info["fitted"]
+    text = " ".join(warnings)
+    assert "9/8" in text and "not applied" in text and "--tempo-mode map" in text
+
+
+def test_auto_keeps_the_meter_with_the_map():
+    pm, _, _ = drifting_song("9/8:2+2+2+3", 192.0, 204.0)
+    out, info, warnings = G.apply(pm, 198.0, meter=Meter.parse("9/8"))
+    assert info["tempo"] == "map" and info["meter"] == "9/8"
+    ts = out.time_signature_changes[0]
+    assert (ts.numerator, ts.denominator) == (9, 8)
+    assert not any("not applied" in w for w in warnings)
+
+
+def test_too_few_notes_warns_naming_the_meter_and_the_reason():
+    pm = pretty_midi.PrettyMIDI()
+    inst = pretty_midi.Instrument(0, name="x")
+    inst.notes = [pretty_midi.Note(80, 60, 0.3 * i, 0.3 * i + 0.1) for i in range(10)]
+    pm.instruments.append(inst)
+    out, info, warnings = G.apply(pm, 120.0, meter=Meter.parse("7/8"))
+    assert out is pm and not info["fitted"]
+    text = " ".join(warnings)
+    assert "7/8" in text and "not applied" in text and "too few" in text
+
+
+def test_four_four_unfitted_warning_is_unchanged():
+    pm = pretty_midi.PrettyMIDI()
+    inst = pretty_midi.Instrument(0, name="x")
+    inst.notes = [pretty_midi.Note(80, 60, 0.3 * i, 0.3 * i + 0.1) for i in range(10)]
+    pm.instruments.append(inst)
+    _, _, warnings = G.apply(pm, 120.0)
+    assert warnings == ["no track sits on a steady grid (too few notes, or too loose); "
+                        "the MIDI keeps its old tempo and nothing was snapped"]
+
+
+def _slow_nine():
+    """A slow 9/8 (an eighth of 1 s) played dum . tek-tek: hits at 0, 1/2 and 3/4 of
+    every eighth, loudest on bar one, and a loose comping (so the drums set the grid, as
+    in Harman Dalı). The half-eighth level fits the drums tighter, but the meter's eighth
+    is the slow one."""
+    rng = np.random.default_rng(1)
+    pm = pretty_midi.PrettyMIDI()
+    drums = pretty_midi.Instrument(0, name="drums", is_drum=True)
+    comp = pretty_midi.Instrument(0, name="comping")
+    for k in range(9 * 12):
+        t = 0.5 + k
+        for frac, vel in ((0.0, 120 if k % 9 == 0 else 90), (0.04, 40), (0.5, 70), (0.75, 70)):
+            drums.notes.append(pretty_midi.Note(vel, 36 if frac == 0 else 42, t + frac, t + frac + 0.05))
+        c = t + rng.uniform(-0.06, 0.06)
+        for p in PROG[(k // 9) % 4]:
+            comp.notes.append(pretty_midi.Note(70, p, c, c + 0.9))
+    pm.instruments = [drums, comp]
+    return pm
+
+
+def test_an_explicit_tempo_is_the_pulse_in_x8():
+    meter = Meter.parse("9/8")
+    _, free, _ = G.apply(_slow_nine(), 60.0, meter=meter)
+    _, fixed, _ = G.apply(_slow_nine(), 60.0, meter=meter, fixed_pulse=True)
+    assert free["bpm"] == pytest.approx(120.0, rel=1e-3)      # the tracker's beat may be any level
+    assert fixed["bpm"] == pytest.approx(60.0, rel=1e-3)      # the user's tempo is the eighth
+    assert G.Grid(fixed["bpm"], fixed["anchor"], meter).bar == pytest.approx(9.0, rel=1e-3)
+    off = (fixed["first_bar"] - 0.5) % 9.0
+    assert min(off, 9.0 - off) < 0.02
+
+
+def test_grid_command_tempo_fixes_the_pulse(tmp_path):
+    src = tmp_path / "in.mid"
+    _slow_nine().write(str(src))
+    out = tmp_path / "out.mid"
+    assert cli.grid_main([str(src), "-o", str(out), "--tempo", "60", "--meter", "9/8"]) == 0
+    import json
+    assert json.loads(out.with_suffix(".grid.json").read_text())["bpm"] == pytest.approx(60.0, rel=1e-3)
 
 
 # --- the flag -------------------------------------------------------------------------

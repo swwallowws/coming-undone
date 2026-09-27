@@ -328,6 +328,13 @@ by hand.
   or a dotted quarter; the grid tries all three and keeps the one the notes sit
   tightest on. Bar "one" also weighs the other group starts and loud onsets, and
   `--downbeat` runs from 1 to the numerator. 4/4 stays the default and is unchanged.
+  A `--tempo` you give counts the meter's pulse and is kept: `--meter 9/8 --tempo
+  52.8` grids a slow 9/8 whose eighth is 52.8 BPM, even when its drums play the half
+  eighths (Harman Dalı's dum . tek-tek moved the grid to 105.6 and halved every bar).
+- **A requested meter is never dropped silently.** When no grid fits, a meter other
+  than 4/4 gets its own warning, naming it and why: too few notes, no constant tempo
+  under `--tempo-mode constant` (try `map`), or `--no-grid`. In `auto` a song no
+  constant tempo fits gets a tempo map in its meter instead.
 - **No note moves for the grid.** The first bar is a pickup of its own tempo that
   ends exactly on the first real bar line; from there the tempo is the fitted one.
 - **Snapping is opt-in (`--snap`).** It removes each track's latency (its signed
@@ -365,24 +372,29 @@ Harman Dalı (a live 9/8) moved between 103 and 108 BPM and fitted none either.
 - **`--tempo-mode auto` (the default)** keeps the constant grid when it fits: when
   its source track sits within 0.08 of a 16th of it on average (steady songs here sat
   at 0.04 to 0.06). Then the output is byte for byte what it was before the map
-  existed. Otherwise, or when no constant grid fits, it writes a tempo map.
+  existed. Past 0.08 the map must also earn its place: fitted on every other note of
+  its track, it has to sit at least 0.02 of a 16th closer to the notes in between than
+  the constant grid does. A loose but steady band fails that test and keeps the
+  constant grid (Đurđevdan's steady late excerpt: the map gained nothing there and put
+  bass and comping further off); a drifting one passes (its early excerpt, 91 to 100
+  BPM, gained 0.045). With no constant grid at all, it writes the map.
   `--tempo-mode constant` and `--tempo-mode map` force one or the other.
 - **How the map is fitted.** The drums (or, with no drum track, the best-aligned
   track) go through a beat tracker held near the detected tempo, each hit weighted
-  by its velocity, so the loud kick and snare pin the beat. Each beat time is then
-  lightly smoothed: a straight line through it and the two beats either side. The
-  meter's pulse and bar "one" are found as for the constant grid, but counted in
-  beats of the map, so every bar has the meter's number of pulses however the tempo
-  moved. On Đurđevdan, fitting half the drum hits and measuring the other half, the
-  map sat 0.17 of a 16th off against the constant grid's 0.18 (whole song) and 0.22
-  (early excerpt); the light smoothing helped bass and comping, while wider smoothing
-  lost the drift.
+  by its velocity, so the loud kick and snare pin the beat. The meter's pulse and bar
+  "one" are found as for the constant grid, but counted in beats of the map, so every
+  bar has the meter's number of pulses however the tempo moved. Fitting half the drum
+  hits and measuring the other half, the map sat 0.17 of a 16th off against the
+  constant grid's 0.18 on the whole of Đurđevdan, 0.16 against 0.22 on an early
+  excerpt, and 0.11 against 0.20 on Harman Dalı at its slow eighth. The beats are not smoothed:
+  smoothing them never helped the held-out drums and lost Harman Dalı's drift.
 - **In the MIDI** the map is a tempo change on every beat after a pickup bar, so a
   DAW's bar lines follow the band. Notes never move. `--snap` and each track's latency
   work against the map, and so do `--downbeat` and the web UI's bar shift.
 - **The manifest's `grid`** says `"tempo": "map"` and adds the beat times (`beats`),
-  which of them is a bar line (`first`), the range of tempi (`bpm_range`), and how far
-  the constant grid sat (`constant_offset_16th`). `bpm` is then the median tempo.
+  which of them is a bar line (`first`), the slowest and fastest bar (`bpm_range`),
+  how far the constant grid sat (`constant_offset_16th`) and what the map gained on
+  held-out notes (`map_gain_16th`). `bpm` is then the median tempo.
 
 ## Input conditioning
 

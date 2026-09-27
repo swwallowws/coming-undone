@@ -1,7 +1,9 @@
 """How well a MIDI's tracks sit on a constant grid against the tempo map, and which
 subdivision fits. Everything in 16ths-of-a-step (0 exact, 0.25 random).
 
-compare.py IN.mid OUT_DIR BPM_GUESS METER [START END]
+compare.py IN.mid OUT_DIR BPM_GUESS METER [START END] [--fixed]
+
+--fixed: BPM_GUESS is the pulse (what stemscribe does with a --tempo you give it).
 
 - constant: grid.apply(tempo="constant"); when no grid fits, the relaxed pulse grid
   (fit_pulse with min_alignment 0), which is what one tempo would give.
@@ -24,9 +26,11 @@ from scipy.ndimage import median_filter
 
 from stemscribe import grid as G
 
-src, out_dir = sys.argv[1], pathlib.Path(sys.argv[2])
-guess, meter = float(sys.argv[3]), G.Meter.parse(sys.argv[4])
-window = (float(sys.argv[5]), float(sys.argv[6])) if len(sys.argv) > 6 else None
+argv = [a for a in sys.argv[1:] if a != "--fixed"]
+FIXED = "--fixed" in sys.argv
+src, out_dir = argv[0], pathlib.Path(argv[1])
+guess, meter = float(argv[2]), G.Meter.parse(argv[3])
+window = (float(argv[4]), float(argv[5])) if len(argv) > 5 else None
 out_dir.mkdir(parents=True, exist_ok=True)
 
 pm = pretty_midi.PrettyMIDI(src)
@@ -58,18 +62,18 @@ def ms(t, g):
 report = {"src": src, "window": window, "meter": str(meter)}
 
 # --- constant --------------------------------------------------------------------
-cpm, cinfo, cwarn = G.apply(pm, guess, meter=meter, tempo="constant")
+cpm, cinfo, cwarn = G.apply(pm, guess, meter=meter, tempo="constant", fixed_pulse=FIXED)
 if cinfo["fitted"]:
     cg = G.Grid(cinfo["bpm"], cinfo["anchor"], meter)
     cpm.write(str(out_dir / "constant.mid"))
 else:
     tracks = {i.name: [n.start for n in i.notes] for i in pm.instruments}
-    cg = G.fit_pulse(tracks, guess, meter, min_alignment=0.0)[0]
+    cg = G.fit_pulse(tracks, guess, meter, min_alignment=0.0, fixed=FIXED)[0]
 report["constant"] = {"fitted": cinfo["fitted"], "bpm": round(cg.bpm, 3), "warnings": cwarn,
                       "tracks": {i.name: round(off(starts(i), cg), 3) for i in pm.instruments}}
 
 # --- map, widths -------------------------------------------------------------------
-mpm, minfo, mwarn = G.apply(pm, guess, meter=meter, tempo="map")
+mpm, minfo, mwarn = G.apply(pm, guess, meter=meter, tempo="map", fixed_pulse=FIXED)
 mpm.write(str(out_dir / "map.mid"))
 m = G.TempoMap.from_info(minfo)
 report["map"] = {k: minfo[k] for k in ("bpm", "bpm_range", "first_bar", "source_track",
@@ -99,7 +103,7 @@ src_on = [n.start for i in pm.instruments if i.name == src_track for n in i.note
 all_on = [n.start for i in pm.instruments for n in i.notes]
 end = max(n.end for i in pm.instruments for n in i.notes)
 seed = G.fit_pulse({i.name: [n.start for n in i.notes] for i in pm.instruments}, guess, meter,
-                   min_alignment=0.0)[0]
+                   min_alignment=0.0, fixed=FIXED)[0]
 src_inst = next(i for i in pm.instruments if i.name == src_track)
 vel = [n.velocity / 127 for n in src_inst.notes]
 variants = {f"tightness {t}": dict(tightness=t) for t in (100, 400, 1600)}

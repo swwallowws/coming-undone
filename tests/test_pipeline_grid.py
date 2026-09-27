@@ -156,3 +156,9 @@ def test_no_snap_keeps_note_times_and_grid_can_be_turned_off(run):
     assert comp.notes[0].start == pytest.approx(0.512, abs=2e-3)       # 12 ms late, kept
     res = run(grid=False)
     assert json.loads(res.manifest_path.read_text())["grid"] == {"fitted": False, "disabled": True}
+    assert not any("meter" in w for w in res.warnings)
+
+
+def test_a_meter_with_the_grid_off_is_not_dropped_silently(run):
+    res = run(grid=False, meter="6/8")
+    assert any("6/8" in w and "not applied" in w and "--no-grid" in w for w in res.warnings)

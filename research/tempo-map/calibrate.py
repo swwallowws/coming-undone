@@ -11,7 +11,7 @@ import pretty_midi
 from stemscribe import grid as G
 
 args = sys.argv[1:]
-print(f"MAP_THRESHOLD {G.MAP_THRESHOLD}")
+print(f"MAP_THRESHOLD {G.MAP_THRESHOLD}, MAP_GAIN {G.MAP_GAIN}")
 for k in range(0, len(args), 3):
     path, bpm, meter = args[k], float(args[k + 1]), G.Meter.parse(args[k + 2])
     pm = pretty_midi.PrettyMIDI(path)
@@ -19,4 +19,6 @@ for k in range(0, len(args), 3):
     _, a, _ = G.apply(pm, bpm, meter=meter)
     off = c.get("constant_offset_16th") if c["fitted"] else None
     src = c.get("source_track") if c["fitted"] else "-"
-    print(f"{path}: constant {'no fit' if off is None else f'{off:.3f}'} (from {src}), auto picks {a.get('tempo')}")
+    gain = a.get("map_gain_16th")
+    print(f"{path}: constant {'no fit' if off is None else f'{off:.3f}'} (from {src}), "
+          f"map gain on held-out notes {'-' if gain is None else f'{gain:.3f}'}, auto picks {a.get('tempo')}")

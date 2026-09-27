@@ -77,7 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="song BPM, written into the MIDI. Omit and it is detected from the "
-        "drums stem -- you only need this when you disagree with the detection",
+        "drums stem -- you only need this when you disagree with the detection. "
+        "Counted in the meter's pulse: in 9/8 it is the eighth, and the grid keeps it",
     )
 
     p.add_argument(
@@ -350,8 +351,9 @@ def grid_main(argv: list[str] | None = None) -> int:
     p.add_argument("midi")
     p.add_argument("-o", "--out", required=True)
     p.add_argument("--tempo", type=float, default=None,
-                   help="a tempo to search near (default: search 60-200 BPM; the file's own "
-                        "tempo map is often a placeholder)")
+                   help="a tempo to search near, counted in the meter's pulse (in 9/8 the "
+                        "eighth), which it then keeps (default: search 60-200 BPM; the "
+                        "file's own tempo map is often a placeholder)")
     p.add_argument("--snap", action="store_true")
     _add_meter_args(p)
     _add_tempo_mode_arg(p)
@@ -360,7 +362,8 @@ def grid_main(argv: list[str] | None = None) -> int:
     try:
         pm = pretty_midi.PrettyMIDI(a.midi)
         out, info, warnings = _grid.apply(pm, a.tempo, snap_notes=a.snap, downbeat=a.downbeat,
-                                          meter=a.meter, tempo=a.tempo_mode)
+                                          meter=a.meter, tempo=a.tempo_mode,
+                                          fixed_pulse=a.tempo is not None)
     except (OSError, ValueError) as e:
         print(f"stemscribe-grid: {e}", file=sys.stderr)
         return 1

@@ -497,6 +497,11 @@ def process(
         # After realign on purpose: the grid is fitted on the original file's
         # timeline, which is the one the MIDI's notes refer to.
         grid_info: dict = {"fitted": False, "disabled": True}
+        if not grid and meter != _grid.DEFAULT:
+            w = (f"the meter {meter} was not applied: --no-grid skips the stage that writes "
+                 f"bar lines, so the MIDI has no {meter} bar lines")
+            warnings.append(w)
+            log.warning(w)
         if grid:
             t0 = time.perf_counter()
             _emit("grid", "fitting the beat grid ...")
@@ -513,7 +518,8 @@ def process(
                     continue
                 audio_env[_merge.track_for_stem(stem)[0]] = (t + prepared.offset, env)
             gridded, grid_info, gw = _grid.apply(pm, bpm, snap_notes=snap, downbeat=downbeat,
-                                                 meter=meter, audio=audio_env, tempo=tempo_mode)
+                                                 meter=meter, audio=audio_env, tempo=tempo_mode,
+                                                 fixed_pulse=tempo_est.source == "user")
             for w in gw:
                 warnings.append(w)
                 log.warning(w)

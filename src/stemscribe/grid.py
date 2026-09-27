@@ -266,7 +266,11 @@ class TempoMap:
         return i
 
     def bpm_range(self) -> tuple[float, float]:
-        per = 60.0 / np.diff(self.beats)
+        """The slowest and fastest bar, as pulse tempi (single pulses carry the beat
+        tracker's frame steps, a bar averages them out)."""
+        bars = self.bar_lines()
+        per = 60.0 * self.meter.pulses / np.diff(bars) if len(bars) > 1 else \
+            60.0 / np.diff(self.beats)
         return float(per.min()), float(per.max())
 
     def as_dict(self) -> dict:
@@ -284,9 +288,19 @@ MAP_THRESHOLD = 0.08     # 16ths: auto uses the map when the constant grid's sou
 TEMPO_MODES = ("auto", "constant", "map")
 
 
-def use_map(constant_offset: float | None) -> bool:
-    """auto: follow the band when no constant grid fits (None) or it fits poorly."""
-    return constant_offset is None or constant_offset > MAP_THRESHOLD
+MAP_GAIN = 0.02          # 16ths: ...and a map must beat it by this much on held-out notes
+
+
+def use_map(constant_offset: float | None, gain: float | None = None) -> bool:
+    """auto: follow the band when no constant grid fits (None), or it fits poorly and a
+    map does clearly better on notes it was not fitted on (gain, see map_gain; None when
+    not measured). The second test keeps a steady but loose band on the constant grid:
+    Đurđevdan's late excerpt sat 0.13 off one tempo, yet a map gained 0.008 on held-out
+    drums and put bass and comping further off; its early excerpt, which drifts from 91
+    to 100 BPM, gained 0.055."""
+    if constant_offset is None:
+        return True
+    return constant_offset > MAP_THRESHOLD and (gain is None or gain >= MAP_GAIN)
 
 
 def offset_16th(times, g) -> float | None:
@@ -401,7 +415,7 @@ def _off_fill(fine: Grid, coarse: Grid, times) -> float:
 
 
 def fit_pulse(tracks: dict[str, list[float]], beat_bpm: float, meter: Meter = DEFAULT,
-              min_alignment: float = MIN_ALIGNMENT):
+              min_alignment: float = MIN_ALIGNMENT, fixed: bool = False):
     """The grid in the meter's pulse, from a tracked beat. In x/4 (and x/2) the pulse is
     the tracked beat. In x/8 a tracker may have followed the eighth, the quarter or the
     dotted quarter, so try pulse = beat, beat/2 and beat/3, coarsest first.
@@ -412,9 +426,10 @@ def fit_pulse(tracks: dict[str, list[float]], beat_bpm: float, meter: Meter = DE
     positions are mostly played (OFF_FILL). An eighth-pulse 6/8 ballad with some 16th
     fill-ins keeps the eighth; a song with a note on every eighth under a quarter-note
     tracker moves to beat/2. Returns (grid on a pulse, source track, {track: alignment})
-    or None. min_alignment: 0 still picks the pulse for a drifting song (the map's seed)."""
+    or None. min_alignment: 0 still picks the pulse for a drifting song (the map's seed).
+    fixed: beat_bpm is the pulse (a tempo the user gave), so no finer one is tried."""
     best = None
-    for d in ((1, 2, 3) if meter.den >= 8 else (1,)):
+    for d in ((1, 2, 3) if meter.den >= 8 and not fixed else (1,)):
         res = fit_tracks(tracks, beat_bpm * d, meter=meter)
         if res is None or res[2][res[1]] < min_alignment:
             continue
@@ -506,7 +521,8 @@ def shift(g: Grid, beats: int) -> Grid:
 # --- the tempo map ------------------------------------------------------------------
 MAP_SR = 200             # frames per second of the beat tracker's onset envelope
 MAP_TIGHTNESS = 400      # librosa's tightness: how hard the tracker holds the tempo
-MAP_SMOOTH = 2           # pulses: each pulse time from a line through it and this many either side
+MAP_SMOOTH = 0           # pulses: each pulse time from a line through it and this many either
+#                          side (0: none; see fit_map for why that is the default)
 
 
 def _smooth(beats: np.ndarray, half: int = MAP_SMOOTH) -> np.ndarray:
@@ -568,18 +584,19 @@ def fit_map(times, g: Grid, end: float, all_times=None, weights=None,
             tightness: float = MAP_TIGHTNESS, smooth: int = MAP_SMOOTH) -> np.ndarray:
     """Pulse times that follow the onsets `times` (weighted by `weights`, say velocity)
     through a song whose tempo drifts, from before 0 to past `end`: a beat tracker's
-    pulses (see _track_beats), gaps filled, run on past both ends, lightly smoothed
-    (_smooth), and moved onto the 16th most notes (all_times) start on. g: a grid in the
-    right pulse (its tempo is the guess). Returns an empty array when there is too little
-    to track.
+    pulses (see _track_beats), gaps filled, run on past both ends, and moved onto the
+    16th most notes (all_times) start on. g: a grid in the right pulse (its tempo is the
+    guess). smooth: pulses either side for _smooth (default none). Returns an empty
+    array when there is too little to track.
 
-    The evidence (research/tempo-map/compare.py on Đurđevdan and Harman Dalı, with the
-    source track measured on held-out notes): the light smoothing leaves the drums where
-    they were and brings the other tracks closer; wider smoothing loses the drift.
-    Dropped: walking from the tightest stretch a pulse at a time, each pulse a local line
-    through the onsets rounded to 16ths (it slipped by whole 16ths); refining the
-    tracker's pulses that way; median-smoothing the pulse lengths and re-summing them
-    (every track further off)."""
+    The evidence (research/tempo-map/compare.py, the source track measured on held-out
+    notes): smoothing the pulse times over 2 either side gained about 0.01 of a 16th for
+    Đurđevdan's bass and comping, but never helped the held-out drums, and on Harman
+    Dalı's slow 9/8 (1.1 s pulses) it lost the drift (0.11 unsmoothed, 0.15 smoothed).
+    So none by default. Dropped: walking from the tightest stretch a pulse at a time,
+    each pulse a local line through the onsets rounded to 16ths (it slipped by whole
+    16ths); refining the tracker's pulses that way; median-smoothing the pulse lengths
+    and re-summing them (every track further off)."""
     t = np.asarray(list(times), dtype=float)
     if len(t) < 4:
         return np.array([])
@@ -696,7 +713,7 @@ SOURCE_LAG_WARN = 0.1     # s: warn when the grid's own track sits this far off 
 def apply(pm: pretty_midi.PrettyMIDI, bpm_guess: float | None, snap_notes: bool = False,
           downbeat: int | None = None, shift_beats: int = 0, meter: Meter = DEFAULT,
           audio: dict[str, tuple[np.ndarray, np.ndarray]] | None = None,
-          tempo: str = "auto"):
+          tempo: str = "auto", fixed_pulse: bool = False):
     """Fit the grid to `pm`'s tracks, stamp it, and optionally snap every track.
 
     bpm_guess: the tracked beat's tempo to search near (None searches 60-200 BPM, for a
@@ -707,9 +724,11 @@ def apply(pm: pretty_midi.PrettyMIDI, bpm_guess: float | None, snap_notes: bool 
     MIDI's timeline; a track and the source track that both line up with their audio
     get their latency unfolded past half a 16th (see latency). tempo: "constant" (one
     tempo), "map" (a tempo per pulse that follows the band) or "auto" (the map only when
-    the constant grid fits poorly, see use_map). Returns (new pm, info for the manifest,
-    warnings). With no usable grid, `pm` comes back untouched and info["fitted"] is
-    False."""
+    the constant grid fits poorly, see use_map). fixed_pulse: bpm_guess is the meter's
+    pulse as the user gave it (in 9/8 the eighth), so the grid never moves to a finer
+    one. Returns (new pm, info for the manifest, warnings). With no usable grid, `pm`
+    comes back untouched, info["fitted"] is False, and a meter other than 4/4 gets a
+    warning of its own: it was asked for and is not in the MIDI."""
     if tempo not in TEMPO_MODES:
         raise ValueError(f"tempo must be one of {', '.join(TEMPO_MODES)}, got {tempo!r}")
     P = meter.pulses
@@ -721,17 +740,30 @@ def apply(pm: pretty_midi.PrettyMIDI, bpm_guess: float | None, snap_notes: bool 
         best = max(tracks, key=lambda k: len(_onsets(tracks[k])), default=None)
         if best and len(_onsets(tracks[best])) >= MIN_ONSETS:
             bpm_guess = search(tracks[best])[0].bpm
-    res = None if bpm_guess is None else fit_pulse(tracks, bpm_guess, meter)
+    res = None if bpm_guess is None else fit_pulse(tracks, bpm_guess, meter, fixed=fixed_pulse)
     constant_offset = None if res is None else offset_16th(tracks[res[1]], res[0])
     g = None
-    if tempo == "map" or (tempo == "auto" and use_map(constant_offset)):
-        fitted = None if bpm_guess is None else _fit_map_tracks(pm, tracks, bpm_guess, meter)
+    gain = None
+    if tempo == "auto" and res is not None and use_map(constant_offset):
+        gain = map_gain(pm, tracks, bpm_guess, meter, res[0], fixed_pulse)
+    tried_map = tempo == "map" or (tempo == "auto" and use_map(constant_offset, gain))
+    if tried_map:
+        fitted = None if bpm_guess is None else \
+            _fit_map_tracks(pm, tracks, bpm_guess, meter, fixed_pulse)
         if fitted is not None:
             g, source, fits, conf = fitted
     if g is None:
         if res is None:
             warnings.append("no track sits on a steady grid (too few notes, or too loose); "
                             "the MIDI keeps its old tempo and nothing was snapped")
+            if meter != DEFAULT:
+                few = max((len(_onsets(v)) for v in tracks.values()), default=0) < MIN_ONSETS
+                why = (f"too few notes (no track has {MIN_ONSETS} onsets)" if few else
+                       "no constant tempo fits and --tempo-mode constant rules out a tempo map, "
+                       "try --tempo-mode map" if not tried_map else
+                       "neither a constant tempo nor a tempo map fits")
+                warnings.append(f"the meter {meter} was not applied: {why}; the MIDI has no "
+                                f"{meter} bar lines")
             return pm, {"fitted": False}, warnings
         g, source, fits = res
         g, conf = phase_from_notes(g, pm.instruments)
@@ -770,34 +802,63 @@ def apply(pm: pretty_midi.PrettyMIDI, bpm_guess: float | None, snap_notes: bool 
     info = {"fitted": True, "tempo": "constant", **g.as_dict(), "anchor": g.anchor,
             "source_track": source, "constant_offset_16th":
                 None if constant_offset is None else round(constant_offset, 4),
+            "map_gain_16th": None if gain is None else round(gain, 4),
             "bar_one_confidence": round(conf, 3), "downbeat_override": downbeat,
             "shift_beats": shift_beats, "snapped": snap_notes, "tracks": per_track}
     return out, info, warnings
 
 
 def _fit_map_tracks(pm: pretty_midi.PrettyMIDI, tracks: dict[str, list[float]],
-                    bpm_guess: float, meter: Meter):
+                    bpm_guess: float, meter: Meter, fixed_pulse: bool = False):
     """The tempo map from the drums (with no drum track, the best-aligned track, as for
     the constant grid), bar "one" found across it. The drums go first: their kick and
     snare mark the pulse, while a dense comping track can align well overall and still
     smear it (on Đurđevdan, following the comping lost the tempo). Returns
     (map, source track, {track: alignment}, bar-one confidence), or None when no track
     has enough onsets."""
-    res = fit_pulse(tracks, bpm_guess, meter, min_alignment=0.0)
+    res = fit_pulse(tracks, bpm_guess, meter, min_alignment=0.0, fixed=fixed_pulse)
     if res is None:
         return None
     g, best, fits = res
-    drums = [n for n in fits if any(i.is_drum and (i.name or f"track {k}") == n
-                                    for k, i in enumerate(pm.instruments))]
-    source = max(drums, key=fits.get) if drums else best
+    source, inst = _map_source(pm, fits, best)
     end = max((n.end for i in pm.instruments for n in i.notes), default=0.0)
-    inst = next(i for k, i in enumerate(pm.instruments) if (i.name or f"track {k}") == source)
     beats = fit_map(tracks[source], g, end, all_times=[t for v in tracks.values() for t in v],
                     weights=[n.velocity / 127 for n in inst.notes])
     if len(beats) < 3:
         return None
     m, conf = phase_map(TempoMap(beats, 0, meter), pm.instruments)
     return m, source, fits, conf
+
+
+def _map_source(pm: pretty_midi.PrettyMIDI, fits: dict[str, float], best: str):
+    """The track the map follows: the best-aligned drum track, else `best`. Returns
+    (name, instrument)."""
+    def name(k, i):
+        return i.name or f"track {k}"
+    drums = [n for n in fits if any(i.is_drum and name(k, i) == n for k, i in enumerate(pm.instruments))]
+    source = max(drums, key=fits.get) if drums else best
+    return source, next(i for k, i in enumerate(pm.instruments) if name(k, i) == source)
+
+
+def map_gain(pm: pretty_midi.PrettyMIDI, tracks: dict[str, list[float]], bpm_guess: float,
+             meter: Meter, constant: Grid, fixed_pulse: bool = False) -> float | None:
+    """How much closer the map's source track sits to a map than to the constant grid,
+    in 16ths, measured fairly: the map is fitted on every other note of the track and
+    both are measured on the notes in between. A steady but loose band gains nothing
+    (only a drifting one does). None when there is no map to fit."""
+    res = fit_pulse(tracks, bpm_guess, meter, min_alignment=0.0, fixed=fixed_pulse)
+    if res is None:
+        return None
+    g, best, fits = res
+    source, inst = _map_source(pm, fits, best)
+    notes = sorted(inst.notes, key=lambda n: n.start)
+    fit_n, test = notes[0::2], [n.start for n in notes[1::2]]
+    end = max((n.end for i in pm.instruments for n in i.notes), default=0.0)
+    beats = fit_map([n.start for n in fit_n], g, end, all_times=[t for v in tracks.values() for t in v],
+                    weights=[n.velocity / 127 for n in fit_n])
+    if len(beats) < 3 or not test:
+        return None
+    return offset_16th(test, constant) - offset_16th(test, TempoMap(beats, 0, meter))
 
 
 def stamp(pm: pretty_midi.PrettyMIDI, g: Grid) -> pretty_midi.PrettyMIDI:
