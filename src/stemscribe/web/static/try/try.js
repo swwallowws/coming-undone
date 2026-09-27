@@ -1,20 +1,25 @@
 // Guided stemscribe demo over one frozen run (data.json from scripts/freeze_try.py):
 // press play, solo a part, flip it from its audio stem to the MIDI stemscribe wrote.
 // Every source runs off one AudioContext clock, made inside the first Play click.
-import { stepRail } from "../vendor/design/steprail.js";
+import { demoShell } from "../vendor/design/demoshell.js";
 
 const $ = (id) => document.getElementById(id);
 const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
-const rail = stepRail($("rail"), {
+const shell = demoShell($("demo"), {
+  product: "stemscribe",
+  title: "Split a recording into its parts and write each one down as MIDI.",
+  intro: "One frozen song: press play, solo a part, then flip it to hear the MIDI stemscribe wrote for it.",
   steps: [
     { id: "play", label: "Press play" },
     { id: "solo", label: "Solo a part", hint: "Drums, bass, vocals or the rest." },
     { id: "midi", label: "Hear what was written", hint: "Flip the part from audio to its MIDI." },
   ],
+  full: { coming: true },
   onReset: startOver,
 });
+const rail = shell.rail;
 
 // what the visitor has done so far; the rail ticks in order, so a step done early
 // is ticked as soon as the ones before it are

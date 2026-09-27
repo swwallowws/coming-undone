@@ -6,27 +6,21 @@
     <title>Try stemscribe</title>
     <script>
       // For framing (the showcase site): ?theme=paper|night picks the mode
-      // before first paint, otherwise the system scheme applies; ?embed=1
-      // drops the page's own header, since the framing page names the tool.
+      // before first paint, otherwise the system scheme applies. The demo
+      // shell itself handles ?embed=1.
       (function () {
-        var q = new URLSearchParams(location.search);
-        var t = q.get("theme");
+        var t = new URLSearchParams(location.search).get("theme");
         if (t === "paper" || t === "night") document.documentElement.dataset.theme = t;
-        if (q.get("embed") === "1") document.documentElement.classList.add("embed");
       })();
     </script>
     <link rel="stylesheet" href="../vendor/design/tokens.css" />
     <link rel="stylesheet" href="../vendor/design/steprail.css" />
+    <link rel="stylesheet" href="../vendor/design/demoshell.css" />
     <link rel="stylesheet" href="try.css" />
   </head>
   <body>
-    <header class="try-head">
-      <strong class="wordmark">stemscribe</strong>
-      <span class="try-lead">One song in: its parts as audio stems and as labelled MIDI.</span>
-    </header>
-    <main class="try">
-      <nav id="rail" class="try-rail" aria-label="Steps"></nav>
-      <section class="try-live" aria-label="Demo">
+    <div id="demo">
+      <div class="try-live">
         <p id="message" class="try-message" role="status">Loading the song…</p>
         <div class="try-row">
           <button id="play" type="button" disabled>Play</button>
@@ -49,9 +43,8 @@
           <canvas id="roll"></canvas>
           <p id="empty" class="try-empty">Solo a part and flip it to MIDI to see the notes stemscribe wrote.</p>
         </div>
-        <p class="try-fine">A frozen run on one song, played in the browser. The full tool runs on any song from the command line or its local web page.</p>
-      </section>
-    </main>
+      </div>
+    </div>
     <script type="module" src="try.js"></script>
   </body>
 </html>
