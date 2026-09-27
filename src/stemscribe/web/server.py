@@ -95,6 +95,7 @@ def _run(job: Job, audio: pathlib.Path, opts: dict) -> None:
                 duration=opts["duration"],
             ),
             tempo=opts["tempo"],
+            meter=opts["meter"],
             keep_stems=True,
             instrumental=True,
             progress=job.emit,
@@ -179,9 +180,14 @@ async def create_job(
     start: float | None = Form(None),
     duration: float | None = Form(None),
     tempo: float | None = Form(None),
+    meter: str = Form("4/4"),
 ) -> dict:
     if backend not in BACKENDS:
         raise HTTPException(400, f"unknown backend {backend!r}")
+    try:                                   # parsed like the CLI's --meter
+        bar = _grid.Meter.parse(meter)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
 
     url = (url or "").strip()
     has_file = file is not None and file.filename
@@ -226,6 +232,7 @@ async def create_job(
         start=start,
         duration=duration,
         tempo=tempo,  # None -> detected; the UI's default
+        meter=bar,
     )
     threading.Thread(target=_run, args=(job, audio, opts), daemon=True).start()
     return {"id": jid, "name": safe}

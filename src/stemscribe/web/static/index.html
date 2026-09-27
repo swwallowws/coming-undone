@@ -194,8 +194,14 @@
       </div>
 
       <span class="label">Tempo</span>
-      <label class="num"><input type="number" id="tempo" placeholder="auto" step="0.01" min="20" max="400"> BPM
+      <label class="num"><input type="number" id="tempo" placeholder="auto" step="0.01" min="20" max="400"> <span id="tempo-unit">BPM</span>
         <span class="mut">empty: detected from the audio</span></label>
+
+      <span class="label">Meter</span>
+      <div><span class="choice" data-for="meter">
+          <button data-v="4/4">4/4</button><button data-v="3/4">3/4</button><button data-v="6/8">6/8</button><button data-v="9/8:2+2+2+3">9/8 (2+2+2+3)</button><button data-v="12/8">12/8</button></span>
+        <div class="hint" id="meter-hint"></div></div>
+      <input type="hidden" id="meter" value="4/4">
 
       <span class="label">Section</span>
       <div class="nums" style="margin:0">
@@ -256,7 +262,7 @@
     <div class="panel">
       <h2>Tempo</h2>
       <div class="tempo-hero">
-        <span class="bpm" id="bpm">–</span><span class="bpm-unit">BPM</span>
+        <span class="bpm" id="bpm">–</span><span class="bpm-unit" id="bpm-unit">BPM</span>
         <span class="pill" id="tempo-src"></span>
         <span class="pill" id="tempo-from"></span>
       </div>
@@ -314,7 +320,22 @@ fetch("/api/config").then(r => r.json()).then(c => {
 });
 
 // ---- joined option buttons: each writes its value into the hidden input it names
-const choiceHooks = { model: () => { $("model-hint").textContent = MODEL_HINT[$("model").value]; } };
+// The tempo counts the meter's denominator note (grid.py): eighths in x/8. The MIDI's
+// own tempo counts quarters, so say which one this number is.
+const PULSE = { 1: "wholes", 2: "halves", 4: "", 8: "eighths", 16: "sixteenths", 32: "32nds" };
+const bpmUnit = (meter) => {
+  const w = PULSE[String(meter || "4/4").split(":")[0].split("/")[1]];
+  return w ? `BPM (${w})` : "BPM";
+};
+const choiceHooks = {
+  model: () => { $("model-hint").textContent = MODEL_HINT[$("model").value]; },
+  meter: () => {
+    const m = $("meter").value;
+    $("tempo-unit").textContent = bpmUnit(m);
+    $("meter-hint").textContent = m.split(":")[0].endsWith("/8")
+      ? "the tempo counts eighths; the MIDI file writes it in quarters (half the number)" : "";
+  },
+};
 function wireChoices() {
   document.querySelectorAll(".choice[data-for]").forEach(group => {
     const input = $(group.dataset.for);
@@ -328,6 +349,7 @@ function wireChoices() {
 }
 wireChoices();
 choiceHooks.model();
+choiceHooks.meter();
 
 // ---- cleanup is the master switch: its parts and numbers follow it
 function syncCleanup() {
@@ -505,6 +527,7 @@ $("go").onclick = async () => {
   fd.append("max_duration_beats", numOr("maxbeats", 2));
   fd.append("velocity_floor", numOr("velfloor", 15));
   if ($("tempo").value !== "") fd.append("tempo", $("tempo").value);
+  fd.append("meter", $("meter").value);
   if ($("start").value !== "") fd.append("start", $("start").value);
   if ($("duration").value !== "") fd.append("duration", $("duration").value);
 
@@ -577,6 +600,8 @@ function render(id, res) {
                                t.source === "user" ? "you set this" : "fallback";
   $("tempo-from").textContent = t.analyzed_stem ? `from ${t.analyzed_stem} stem` : "";
   $("tempo-from").classList.toggle("hidden", !t.analyzed_stem);
+  // a fitted grid's tempo counts the meter's pulse (eighths in x/8); without one it is quarters
+  $("bpm-unit").textContent = (res.grid || {}).fitted ? bpmUnit(res.grid.meter) : "BPM";
 
   // bar "one": a guess, so it can be moved a beat at a time (re-stamps, no note moves)
   const g = res.grid || {};

@@ -188,6 +188,49 @@ def test_unknown_backend_rejected(client, tmp_path):
     assert r.status_code == 400
 
 
+def _post_job(client, tmp_path, monkeypatch, **data):
+    """Create a job with process() stubbed; returns the response and process()'s kwargs."""
+    seen = {}
+
+    def fake_process(audio, **kw):
+        seen.update(kw)
+        raise RuntimeError("stub")
+    monkeypatch.setattr(webapp, "process", fake_process)
+    monkeypatch.setattr(webapp.threading, "Thread",
+                        lambda target, args, daemon: type("T", (), {"start": lambda s: target(*args)})())
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"RIFF")
+    with open(audio, "rb") as fh:
+        r = client.post("/api/jobs", files={"file": ("a.wav", fh, "audio/wav")},
+                        data={"backend": "basic-pitch", **data})
+    return r, seen
+
+
+@pytest.mark.parametrize("spec", ["4/4", "3/4", "6/8", "9/8:2+2+2+3", "12/8"])
+def test_job_meter_reaches_process_like_the_cli_flag(client, tmp_path, monkeypatch, spec):
+    from stemscribe import grid as G
+    r, seen = _post_job(client, tmp_path, monkeypatch, meter=spec)
+    assert r.status_code == 200
+    assert seen["meter"] == G.Meter.parse(spec)
+
+
+def test_job_meter_defaults_to_four_four(client, tmp_path, monkeypatch):
+    from stemscribe import grid as G
+    r, seen = _post_job(client, tmp_path, monkeypatch)
+    assert r.status_code == 200 and seen["meter"] == G.DEFAULT
+
+
+def test_job_rejects_a_bad_meter(client, tmp_path, monkeypatch):
+    r, seen = _post_job(client, tmp_path, monkeypatch, meter="7/5")
+    assert r.status_code == 400 and "meter" in r.json()["detail"] and not seen
+
+
+def test_page_offers_the_meters(client):
+    page = client.get("/").text
+    for v in ("4/4", "3/4", "6/8", "9/8:2+2+2+3", "12/8"):
+        assert f'data-v="{v}"' in page
+
+
 def test_roll_lists_each_tracks_pitched_notes(client, tmp_path):
     job = make_job(tmp_path, status="done")
     out = job.dir / "out"
