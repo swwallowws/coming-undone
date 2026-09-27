@@ -132,6 +132,7 @@ def process(
     snap: bool = False,
     downbeat: int | None = None,
     fallback: bool = True,
+    meter: "str | _grid.Meter" = "4/4",
 ) -> Result:
     """Audio in, stems + labeled multi-track MIDI out.
 
@@ -151,9 +152,15 @@ def process(
     or None to skip drums. Skipped with a warning when the extra is not installed.
     grid: fit the beat grid from the tightest track and write real bar lines.
     snap: also remove each track's latency and snap it to the grid (off by default:
-    snapping deletes real feel). downbeat: 1-4, which beat of the guessed bar is "one".
+    snapping deletes real feel). downbeat: 1 to the meter's pulses (1-4 in 4/4), which
+    pulse of the guessed bar is "one".
     fallback: re-transcribe a nearly empty stem with basic-pitch.
+    meter: the bar, "4/4" (default), "3/4", "6/8", "9/8:2+2+2+3" and so on. The grid
+    counts the meter's denominator note; see grid.fit_pulse.
     """
+    meter = meter if isinstance(meter, _grid.Meter) else _grid.Meter.parse(meter)
+    if downbeat is not None and not 1 <= downbeat <= meter.pulses:
+        raise ValueError(f"downbeat must be 1 to {meter.pulses}, got {downbeat}")
     t_start = time.perf_counter()
     timings: dict[str, float] = {}
     warnings: list[str] = []
@@ -378,7 +385,7 @@ def process(
                 n_notes = sum(len(i.notes) for i in pretty_midi.PrettyMIDI(str(mid)).instruments)
                 y, sr = _sf.read(str(stem_paths[stem]), dtype="float32", always_2d=True)
                 rms = float((y ** 2).mean() ** 0.5) if y.size else 0.0
-                if _backends.is_sparse(n_notes, len(y) / sr, bpm, rms):
+                if _backends.is_sparse(n_notes, len(y) / sr, bpm, rms, meter.quarters):
                     w = (f"stem {stem!r}: {backend} gave only {n_notes} notes; "
                          f"transcribed it again with {_backends.FALLBACK_BACKEND}")
                     warnings.append(w)
@@ -455,7 +462,7 @@ def process(
             track_stats.setdefault(name, {})["note_count"] = len(inst.notes)
             track_stats[name]["program"] = inst.program
             track_stats[name]["quantization_error"] = _merge.quantization_error(
-                inst, tempo=bpm
+                inst, tempo=bpm, den=meter.den
             )
 
         # --- 6. realign to the original timeline ----------------------------
@@ -476,7 +483,8 @@ def process(
             t0 = time.perf_counter()
             _emit("grid", "fitting the beat grid ...")
             pm = pretty_midi.PrettyMIDI(str(midi_path))
-            gridded, grid_info, gw = _grid.apply(pm, bpm, snap_notes=snap, downbeat=downbeat)
+            gridded, grid_info, gw = _grid.apply(pm, bpm, snap_notes=snap, downbeat=downbeat,
+                                                 meter=meter)
             for w in gw:
                 warnings.append(w)
                 log.warning(w)

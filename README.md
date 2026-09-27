@@ -318,6 +318,13 @@ by hand.
   two beats off. The confidence goes into the manifest, a low one warns, and
   `--downbeat 2|3|4` says which beat of the guessed bar is really "one". The web UI
   moves it a beat at a time and re-stamps instantly.
+- **Meters other than 4/4 (`--meter`).** `--meter 3/4`, `6/8`, `12/8` or a grouped
+  `9/8:2+2+2+3` (plain `9/8` means 2+2+2+3). The grid then counts the meter's
+  denominator note, so in 6/8 the manifest's `bpm` counts eighths while the MIDI's
+  tempo counts quarters as usual. In x/8 the tracked beat may be an eighth, a quarter
+  or a dotted quarter; the grid tries all three and keeps the one the notes sit
+  tightest on. Bar "one" also weighs the other group starts and loud onsets, and
+  `--downbeat` runs from 1 to the numerator. 4/4 stays the default and is unchanged.
 - **No note moves for the grid.** The first bar is a pickup of its own tempo that
   ends exactly on the first real bar line; from there the tempo is the fitted one.
 - **Snapping is opt-in (`--snap`).** It removes each track's latency (its median

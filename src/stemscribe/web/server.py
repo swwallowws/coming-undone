@@ -301,7 +301,7 @@ def restamp_tempo(jid: str, bpm: float = Form(...)) -> dict:
     old = pretty_midi.PrettyMIDI(str(midi_path))
     grid = job.result.get("grid") or {}
     if grid.get("fitted"):          # keep bar "one" where it is; only the tempo changes
-        g = _grid.Grid(bpm, grid["anchor"])
+        g = _grid.Grid(bpm, grid["anchor"], _grid.Meter.parse(grid.get("meter", "4/4")))
         _grid.stamp(old, g).write(str(midi_path))
         grid.update(g.as_dict())
     else:
@@ -316,8 +316,8 @@ def restamp_tempo(jid: str, bpm: float = Form(...)) -> dict:
 
 @app.post("/api/jobs/{jid}/bar")
 def shift_bar(jid: str, beats: int = Form(...)) -> dict:
-    """Move bar "one" by whole beats (the guess can be off). Re-stamps the tempo map
-    only: no note moves, like the tempo re-stamp."""
+    """Move bar "one" by whole beats (pulses of the meter; the guess can be off).
+    Re-stamps the tempo map only: no note moves, like the tempo re-stamp."""
     import pretty_midi
 
     job = _job(jid)
@@ -326,10 +326,12 @@ def shift_bar(jid: str, beats: int = Form(...)) -> dict:
     grid = job.result.get("grid") or {}
     if not grid.get("fitted"):
         raise HTTPException(409, "this job has no beat grid")
-    if not -3 <= beats <= 3:
-        raise HTTPException(400, "shift by -3 to 3 beats")
+    meter = _grid.Meter.parse(grid.get("meter", "4/4"))
+    most = meter.pulses - 1
+    if not -most <= beats <= most:
+        raise HTTPException(400, f"shift by -{most} to {most} beats")
     midi_path = job.dir / job.result["midi"]
-    g = _grid.shift(_grid.Grid(grid["bpm"], grid["anchor"]), beats)
+    g = _grid.shift(_grid.Grid(grid["bpm"], grid["anchor"], meter), beats)
     _grid.stamp(pretty_midi.PrettyMIDI(str(midi_path)), g).write(str(midi_path))
     grid.update({**g.as_dict(), "anchor": g.anchor,
                  "shift_beats": grid.get("shift_beats", 0) + beats})

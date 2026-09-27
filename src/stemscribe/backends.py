@@ -182,11 +182,13 @@ def drums_available() -> bool:
 SILENT_RMS = 1e-3
 
 
-def is_sparse(n_notes: int, seconds: float, bpm: float, rms: float) -> bool:
+def is_sparse(n_notes: int, seconds: float, bpm: float, rms: float,
+              beats_per_bar: float = 4.0) -> bool:
     """A stem with sound in it but under one note per 4 bars came out nearly empty
     (MuScriptor gave 3 bass notes for a 4-minute song): transcribe it again with the
-    fallback backend. Short sections (under 8 bars) are never judged."""
-    bars = seconds * bpm / 240.0
+    fallback backend. Short sections (under 8 bars) are never judged. beats_per_bar:
+    the bar in beats of `bpm` (4 in 4/4; a meter's quarters, 3 in 6/8)."""
+    bars = seconds * bpm / (60.0 * beats_per_bar)
     return rms > SILENT_RMS and bars >= 8 and n_notes < bars / 4
 
 

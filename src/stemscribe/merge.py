@@ -74,25 +74,28 @@ def quantization_error(
     inst: pretty_midi.Instrument,
     tempo: float = 120.0,
     grid_division: int = 4,
+    den: int = 4,
 ) -> dict:
     """How far off a fixed grid the onsets sit, in fractions of a grid step.
 
-    This assumes a constant `tempo` starting at t=0 and runs before the grid
-    stage, so it is only meaningful as a relative signal -- a rough "is this
-    track rhythmically legible" number. The grid stage's per-track grid_fit_ms
-    in the manifest is the measured one.
+    This assumes a constant `tempo` (in quarters) starting at t=0 and runs before
+    the grid stage, so it is only meaningful as a relative signal -- a rough "is
+    this track rhythmically legible" number. The grid stage's per-track
+    grid_fit_ms in the manifest is the measured one. The grid divides the meter's
+    pulse (its denominator note, `den`): 16ths in 4/4, 32nds in 6/8.
     """
     if not inst.notes:
-        return {"grid": f"1/{grid_division * 4}", "n": 0, "mean": 0.0, "median": 0.0}
+        return {"grid": f"1/{grid_division * den}", "n": 0, "mean": 0.0, "median": 0.0}
 
-    step = (60.0 / tempo) / grid_division
+    pulse = 60.0 / tempo if den == 4 else (60.0 / tempo) * 4 / den
+    step = pulse / grid_division
     errs = []
     for n in inst.notes:
         offset = n.start % step
         errs.append(min(offset, step - offset) / step)  # 0 = on grid, 0.5 = worst
 
     return {
-        "grid": f"1/{grid_division * 4}",
+        "grid": f"1/{grid_division * den}",
         "n": len(errs),
         "mean": round(statistics.mean(errs), 4),
         "median": round(statistics.median(errs), 4),

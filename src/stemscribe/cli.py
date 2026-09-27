@@ -12,7 +12,33 @@ from .cache import DEFAULT_ROOT, Cache, human_bytes
 from .cleanup import CleanupParams
 from .core import process
 from .fetch import FetchError
+from .grid import DEFAULT as DEFAULT_METER, Meter
 from .prepare import PrepareError, PrepareParams
+
+
+def _meter(spec: str) -> Meter:
+    try:
+        return Meter.parse(spec)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e)) from None
+
+
+def _add_meter_args(g) -> None:
+    g.add_argument("--meter", type=_meter, default=DEFAULT_METER,
+                   help="the bar: 4/4 (default), 3/4, 6/8, 12/8, or grouped like 9/8:2+2+2+3 "
+                        "(9/8 alone is 2+2+2+3). The grid counts the denominator note")
+    g.add_argument("--downbeat", type=int, default=None,
+                   help="which beat of the guessed bar is really 'one' (1 to the meter's "
+                        "numerator; 1-4 in 4/4)")
+
+
+def _check_downbeat(p: argparse.ArgumentParser, a: argparse.Namespace) -> None:
+    if a.downbeat is not None and not 1 <= a.downbeat <= a.meter.pulses:
+        p.error(f"argument --downbeat: must be 1 to {a.meter.pulses} in {a.meter}, got {a.downbeat}")
+
+
+def _later_beats(m: Meter) -> str:
+    return "/".join(map(str, range(2, m.pulses + 1)))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -171,8 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="do not fit a beat grid (the MIDI gets the detected tempo only)")
     g.add_argument("--snap", action="store_true",
                    help="remove each track's latency and snap it to the grid (off: keeps feel)")
-    g.add_argument("--downbeat", type=int, choices=(1, 2, 3, 4), default=None,
-                   help="which beat of the guessed bar is really 'one'")
+    _add_meter_args(g)
     g.add_argument("--drums", default="adt-str", choices=("adt-str", "none"),
                    help="drum transcription (adt-str needs the [drums] extra; default: adt-str)")
     g.add_argument("--no-fallback", dest="fallback", action="store_false",
@@ -210,7 +235,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cleared {human_bytes(freed)} from {c.root}")
         return 0
 
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    _check_downbeat(parser, args)
     logging.basicConfig(
         level=logging.WARNING if args.quiet else logging.INFO,
         format="%(message)s",
@@ -259,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
             snap=args.snap,
             downbeat=args.downbeat,
             fallback=args.fallback,
+            meter=args.meter,
         )
     except (BackendError, FetchError, PrepareError, FileNotFoundError, RuntimeError) as e:
         print(f"stemscribe: {e}", file=sys.stderr)
@@ -279,7 +307,8 @@ def main(argv: list[str] | None = None) -> int:
     if gi.get("fitted"):
         print(f"grid       first bar line at {gi['first_bar']:.2f}s (from {gi['source_track']}, "
               f"'one' confidence {gi['bar_one_confidence']:.2f})"
-              + (", snapped" if gi["snapped"] else "") + " -- if 'one' is wrong, try --downbeat 2/3/4")
+              + (", snapped" if gi["snapped"] else "")
+              + f" -- if 'one' is wrong, try --downbeat {_later_beats(args.meter)}")
     for w in res.warnings:
         print(f"warning    {w}")
 
@@ -310,11 +339,13 @@ def grid_main(argv: list[str] | None = None) -> int:
                    help="a tempo to search near (default: search 60-200 BPM; the file's own "
                         "tempo map is often a placeholder)")
     p.add_argument("--snap", action="store_true")
-    p.add_argument("--downbeat", type=int, choices=(1, 2, 3, 4), default=None)
+    _add_meter_args(p)
     a = p.parse_args(argv)
+    _check_downbeat(p, a)
     try:
         pm = pretty_midi.PrettyMIDI(a.midi)
-        out, info, warnings = _grid.apply(pm, a.tempo, snap_notes=a.snap, downbeat=a.downbeat)
+        out, info, warnings = _grid.apply(pm, a.tempo, snap_notes=a.snap, downbeat=a.downbeat,
+                                          meter=a.meter)
     except (OSError, ValueError) as e:
         print(f"stemscribe-grid: {e}", file=sys.stderr)
         return 1
