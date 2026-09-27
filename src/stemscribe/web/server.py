@@ -310,7 +310,9 @@ def restamp_tempo(jid: str, bpm: float = Form(...)) -> dict:
     if grid.get("fitted"):          # keep bar "one" where it is; only the tempo changes
         g = _grid.Grid(bpm, grid["anchor"], _grid.Meter.parse(grid.get("meter", "4/4")))
         _grid.stamp(old, g).write(str(midi_path))
-        grid.update(g.as_dict())
+        for k in ("beats", "first", "bpm_range"):     # a user's tempo replaces a tempo map
+            grid.pop(k, None)
+        grid.update({**g.as_dict(), "tempo": "constant"})
     else:
         new = pretty_midi.PrettyMIDI(initial_tempo=bpm)
         new.instruments = old.instruments
@@ -338,7 +340,9 @@ def shift_bar(jid: str, beats: int = Form(...)) -> dict:
     if not -most <= beats <= most:
         raise HTTPException(400, f"shift by -{most} to {most} beats")
     midi_path = job.dir / job.result["midi"]
-    g = _grid.shift(_grid.Grid(grid["bpm"], grid["anchor"], meter), beats)
+    g = _grid.TempoMap.from_info(grid) if grid.get("tempo") == "map" else \
+        _grid.Grid(grid["bpm"], grid["anchor"], meter)
+    g = _grid.shift(g, beats)
     _grid.stamp(pretty_midi.PrettyMIDI(str(midi_path)), g).write(str(midi_path))
     grid.update({**g.as_dict(), "anchor": g.anchor,
                  "shift_beats": grid.get("shift_beats", 0) + beats})

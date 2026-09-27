@@ -32,6 +32,12 @@ def _add_meter_args(g) -> None:
                         "numerator; 1-4 in 4/4)")
 
 
+def _add_tempo_mode_arg(g) -> None:
+    g.add_argument("--tempo-mode", default="auto", choices=("auto", "constant", "map"),
+                   help="auto (default): one tempo when it fits, else a tempo map that follows "
+                        "a live band's drift. constant: always one tempo. map: always follow")
+
+
 def _check_downbeat(p: argparse.ArgumentParser, a: argparse.Namespace) -> None:
     if a.downbeat is not None and not 1 <= a.downbeat <= a.meter.pulses:
         p.error(f"argument --downbeat: must be 1 to {a.meter.pulses} in {a.meter}, got {a.downbeat}")
@@ -198,6 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--snap", action="store_true",
                    help="remove each track's latency and snap it to the grid (off: keeps feel)")
     _add_meter_args(g)
+    _add_tempo_mode_arg(g)
     g.add_argument("--drums", default="adt-str", choices=("adt-str", "none"),
                    help="drum transcription (adt-str needs the [drums] extra; default: adt-str)")
     g.add_argument("--no-fallback", dest="fallback", action="store_false",
@@ -287,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
             downbeat=args.downbeat,
             fallback=args.fallback,
             meter=args.meter,
+            tempo_mode=args.tempo_mode,
         )
     except (BackendError, FetchError, PrepareError, FileNotFoundError, RuntimeError) as e:
         print(f"stemscribe: {e}", file=sys.stderr)
@@ -304,6 +312,12 @@ def main(argv: list[str] | None = None) -> int:
             detail += f" -- if wrong, try --tempo {alts}"
     print(f"\ntempo      {detail}")
     gi = res.manifest.get("grid") or {}
+    if gi.get("tempo") == "map":
+        lo, hi = gi["bpm_range"]
+        print(f"tempo map  {lo:.1f} to {hi:.1f} BPM (the band drifts; one tempo sat "
+              + ("nowhere" if gi.get("constant_offset_16th") is None
+                 else f"{gi['constant_offset_16th']:.2f} of a 16th off")
+              + "), a tempo change per beat in the MIDI")
     if gi.get("fitted"):
         print(f"grid       first bar line at {gi['first_bar']:.2f}s (from {gi['source_track']}, "
               f"'one' confidence {gi['bar_one_confidence']:.2f})"
@@ -340,12 +354,13 @@ def grid_main(argv: list[str] | None = None) -> int:
                         "tempo map is often a placeholder)")
     p.add_argument("--snap", action="store_true")
     _add_meter_args(p)
+    _add_tempo_mode_arg(p)
     a = p.parse_args(argv)
     _check_downbeat(p, a)
     try:
         pm = pretty_midi.PrettyMIDI(a.midi)
         out, info, warnings = _grid.apply(pm, a.tempo, snap_notes=a.snap, downbeat=a.downbeat,
-                                          meter=a.meter)
+                                          meter=a.meter, tempo=a.tempo_mode)
     except (OSError, ValueError) as e:
         print(f"stemscribe-grid: {e}", file=sys.stderr)
         return 1
@@ -357,6 +372,9 @@ def grid_main(argv: list[str] | None = None) -> int:
     dst.parent.mkdir(parents=True, exist_ok=True)
     out.write(str(dst))
     dst.with_suffix(".grid.json").write_text(json.dumps(info, indent=2))
+    if info.get("tempo") == "map":
+        print(f"tempo map  {info['bpm_range'][0]:.1f} to {info['bpm_range'][1]:.1f} BPM, "
+              "a tempo change per beat")
     print(f"grid       {info['bpm']:.3f} BPM from {info['source_track']}, first bar line at "
           f"{info['first_bar']:.2f}s ('one' confidence {info['bar_one_confidence']:.2f})"
           + (", snapped" if a.snap else ""))

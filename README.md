@@ -19,7 +19,8 @@ audio in (mp3/wav/m4a) — a file, or a URL
   └─ 4. cleanup       de-overlap + duration-trim pass
   └─ 5. merge         one multi-track MIDI, GM programs + named tracks
   └─ 6. realign       shift MIDI back onto the original file's timeline
-  └─ 7. grid          tempo + real bar lines fitted from the tightest track;
+  └─ 7. grid          tempo + real bar lines fitted from the tightest track,
+                      a tempo map when a live band drifts (--tempo-mode);
                       optional latency removal + snapping (--snap)
 ```
 
@@ -342,18 +343,46 @@ by hand.
   `stemscribe-grid` on a bare MIDI file has no audio and keeps the folded value.
 - **The manifest's `grid`** records the tempo, first bar line, source track, the
   "one" confidence and any override, and per track its alignment, latency, median
-  distance to the grid (`grid_fit_ms`) and, when it lines up with its stem, its
-  offset from that audio (`audio_lag_ms`).
+  distance to the grid (`grid_fit_ms`), mean distance in 16ths (`offset_16th`: 0 is
+  exact, 0.25 is random) and, when it lines up with its stem, its offset from that
+  audio (`audio_lag_ms`).
 - If no track sits on a steady grid, the MIDI keeps the detected tempo, nothing is
   snapped, and a warning says so. `--no-grid` skips the stage.
 
 **Any MIDI, not only stemscribe's:** `stemscribe-grid in.mid -o out.mid [--snap]
-[--downbeat N] [--tempo BPM]` fits and stamps a grid on a file transcribed
-elsewhere and writes `out.grid.json` beside it. Without `--tempo` it searches 60
-to 200 BPM, since such files often carry a placeholder tempo map.
+[--downbeat N] [--tempo BPM] [--tempo-mode auto|constant|map]` fits and stamps a
+grid on a file transcribed elsewhere and writes `out.grid.json` beside it. Without
+`--tempo` it searches 60 to 200 BPM, since such files often carry a placeholder
+tempo map.
 
-One constant tempo per song: a song that speeds up or has tempo changes needs
-more than this.
+### Tempo map (live bands that drift)
+
+A live band speeds up and slows down, and one constant tempo cannot follow it: bar
+lines slide off the music. On Đurđevdan (Bijelo Dugme) a 40 s excerpt sat 0.13 of a
+16th off its best constant grid, and the whole song fitted no constant grid at all;
+Harman Dalı (a live 9/8) moved between 103 and 108 BPM and fitted none either.
+
+- **`--tempo-mode auto` (the default)** keeps the constant grid when it fits: when
+  its source track sits within 0.08 of a 16th of it on average (steady songs here sat
+  at 0.04 to 0.06). Then the output is byte for byte what it was before the map
+  existed. Otherwise, or when no constant grid fits, it writes a tempo map.
+  `--tempo-mode constant` and `--tempo-mode map` force one or the other.
+- **How the map is fitted.** The drums (or, with no drum track, the best-aligned
+  track) go through a beat tracker held near the detected tempo, each hit weighted
+  by its velocity, so the loud kick and snare pin the beat. Each beat time is then
+  lightly smoothed: a straight line through it and the two beats either side. The
+  meter's pulse and bar "one" are found as for the constant grid, but counted in
+  beats of the map, so every bar has the meter's number of pulses however the tempo
+  moved. On Đurđevdan, fitting half the drum hits and measuring the other half, the
+  map sat 0.17 of a 16th off against the constant grid's 0.18 (whole song) and 0.22
+  (early excerpt); the light smoothing helped bass and comping, while wider smoothing
+  lost the drift.
+- **In the MIDI** the map is a tempo change on every beat after a pickup bar, so a
+  DAW's bar lines follow the band. Notes never move. `--snap` and each track's latency
+  work against the map, and so do `--downbeat` and the web UI's bar shift.
+- **The manifest's `grid`** says `"tempo": "map"` and adds the beat times (`beats`),
+  which of them is a bar line (`first`), the range of tempi (`bpm_range`), and how far
+  the constant grid sat (`constant_offset_16th`). `bpm` is then the median tempo.
 
 ## Input conditioning
 

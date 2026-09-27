@@ -134,6 +134,7 @@ def process(
     downbeat: int | None = None,
     fallback: bool = True,
     meter: "str | _grid.Meter" = "4/4",
+    tempo_mode: str = "auto",
 ) -> Result:
     """Audio in, stems + labeled multi-track MIDI out.
 
@@ -158,7 +159,11 @@ def process(
     fallback: re-transcribe a nearly empty stem with basic-pitch.
     meter: the bar, "4/4" (default), "3/4", "6/8", "9/8:2+2+2+3" and so on. The grid
     counts the meter's denominator note; see grid.fit_pulse.
+    tempo_mode: "auto" (default) keeps one tempo when it fits and otherwise writes a tempo
+    map that follows a drifting band; "constant" or "map" force one or the other.
     """
+    if tempo_mode not in _grid.TEMPO_MODES:
+        raise ValueError(f"tempo_mode must be one of {', '.join(_grid.TEMPO_MODES)}, got {tempo_mode!r}")
     meter = meter if isinstance(meter, _grid.Meter) else _grid.Meter.parse(meter)
     if downbeat is not None and not 1 <= downbeat <= meter.pulses:
         raise ValueError(f"downbeat must be 1 to {meter.pulses}, got {downbeat}")
@@ -508,7 +513,7 @@ def process(
                     continue
                 audio_env[_merge.track_for_stem(stem)[0]] = (t + prepared.offset, env)
             gridded, grid_info, gw = _grid.apply(pm, bpm, snap_notes=snap, downbeat=downbeat,
-                                                 meter=meter, audio=audio_env)
+                                                 meter=meter, audio=audio_env, tempo=tempo_mode)
             for w in gw:
                 warnings.append(w)
                 log.warning(w)
@@ -516,7 +521,8 @@ def process(
                 gridded.write(str(midi_path))
                 tempo_est.bpm = grid_info["bpm"]
                 tempo_est.method += "+grid-fit"
-                _emit("grid", f"grid {grid_info['bpm']:.3f} BPM from {grid_info['source_track']}, "
+                kind = "tempo map, median" if grid_info["tempo"] == "map" else "grid"
+                _emit("grid", f"{kind} {grid_info['bpm']:.3f} BPM from {grid_info['source_track']}, "
                               f"first bar line at {grid_info['first_bar']:.2f}s"
                               + (", snapped" if snap else ""))
             timings["grid"] = round(time.perf_counter() - t0, 2)

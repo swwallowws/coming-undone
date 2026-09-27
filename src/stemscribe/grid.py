@@ -18,6 +18,13 @@ audio each track is also lined up against its own stem (see latency, audio_lag).
 Meters: the grid counts pulses, one per note of the meter's denominator (a quarter in
 4/4 and 3/4, an eighth in 6/8 and 9/8), and a bar is `meter.pulses` of them. The fine
 grid is always four steps per pulse. 4/4 is the default and behaves exactly as before.
+
+Tempo map: a live band drifts, and no one tempo fits a whole song (Đurđevdan moves a
+few BPM, Harman Dalı 103 to 108). Then each pulse gets its own time, fitted from the
+tightest track's onsets around it (TempoMap, fit_map), bar "one" is found across the
+map, and the MIDI gets a tempo change per pulse so a DAW's bar lines follow the band.
+In "auto" the map is used only when the constant grid fits poorly (use_map); a steady
+song keeps the constant grid, byte for byte.
 """
 from __future__ import annotations
 
@@ -144,11 +151,149 @@ class Grid:
         s = self.sixteenth
         return (np.asarray(t, dtype=float) - self.anchor + s / 2) % s - s / 2
 
+    def signed16(self, t) -> np.ndarray:
+        """Signed distance of each time to its nearest 16th, in 16ths (-0.5 to 0.5)."""
+        return self.signed(t) / self.sixteenth
+
+    def sixteenth_at(self, t: float) -> float:
+        return self.sixteenth
+
+    def snap_to(self, t: float, per: int = 1) -> float:
+        """The nearest point of the grid with `per` steps per 16th."""
+        return self.snap_time(t, None if per == 1 else self.sixteenth / per)
+
+    def step(self, t: float) -> int:
+        """The index of the 16th nearest t."""
+        return round((t - self.anchor) / self.sixteenth)
+
     def as_dict(self) -> dict:
         d = {"bpm": round(self.bpm, 4), "first_bar": round(self.anchor % self.bar, 4)}
         if self.meter != DEFAULT:
             d["meter"] = str(self.meter)
         return d
+
+
+@dataclass(frozen=True, eq=False)
+class TempoMap:
+    """A pulse time per pulse, for a band whose tempo drifts. Between two pulses time runs
+    evenly (four 16ths per pulse); before the first and after the last it runs on at the
+    edge pulse's length. beats[first] is a bar line, and so is every meter.pulses-th
+    pulse from it. Has Grid's interface, so latency, fit_ms and snap work on either."""
+    beats: np.ndarray
+    first: int
+    meter: Meter = DEFAULT
+
+    @classmethod
+    def from_info(cls, info: dict) -> "TempoMap":
+        """Rebuild the map an apply() info (or a manifest's grid) describes."""
+        return cls(np.asarray(info["beats"], dtype=float), int(info["first"]),
+                   Meter.parse(info.get("meter", "4/4")))
+
+    def position(self, t) -> np.ndarray:
+        """Each time's place in pulses from beats[0] (fractional)."""
+        b = self.beats
+        t = np.asarray(t, dtype=float)
+        pos = np.interp(t, b, np.arange(len(b), dtype=float))
+        pos = np.where(t < b[0], (t - b[0]) / (b[1] - b[0]), pos)
+        return np.where(t > b[-1], len(b) - 1 + (t - b[-1]) / (b[-1] - b[-2]), pos)
+
+    def time(self, pos) -> np.ndarray:
+        """The time at each place in pulses (the inverse of position)."""
+        b = self.beats
+        pos = np.asarray(pos, dtype=float)
+        t = np.interp(pos, np.arange(len(b), dtype=float), b)
+        t = np.where(pos < 0, b[0] + pos * (b[1] - b[0]), t)
+        return np.where(pos > len(b) - 1, b[-1] + (pos - len(b) + 1) * (b[-1] - b[-2]), t)
+
+    def period_at(self, t) -> np.ndarray:
+        """The length of the pulse each time falls in, in seconds."""
+        k = np.clip(np.floor(self.position(t)).astype(int), 0, len(self.beats) - 2)
+        return np.diff(self.beats)[k]
+
+    @property
+    def beat(self) -> float:
+        """The typical pulse, in seconds (the median)."""
+        return float(np.median(np.diff(self.beats)))
+
+    @property
+    def bpm(self) -> float:
+        return 60.0 / self.beat
+
+    @property
+    def sixteenth(self) -> float:
+        return self.beat / 4
+
+    @property
+    def bar(self) -> float:
+        return self.meter.pulses * self.beat
+
+    @property
+    def anchor(self) -> float:
+        """The time of one bar line."""
+        return float(self.beats[self.first])
+
+    def bar_lines(self) -> np.ndarray:
+        return self.beats[self.first::self.meter.pulses]
+
+    def signed16(self, t) -> np.ndarray:
+        q = self.position(t) * 4
+        return q - np.round(q)
+
+    def signed(self, t) -> np.ndarray:
+        """Signed distance of each time to its nearest 16th, in seconds (at the local tempo)."""
+        return self.signed16(t) * self.period_at(t) / 4
+
+    def sixteenth_at(self, t: float) -> float:
+        return float(self.period_at(t)) / 4
+
+    def snap_to(self, t: float, per: int = 1) -> float:
+        n = 4 * per
+        return float(self.time(np.round(self.position(t) * n) / n))
+
+    def step(self, t: float) -> int:
+        return int(np.round(self.position(t) * 4))
+
+    def shift(self, pulses: int) -> "TempoMap":
+        return replace(self, first=(self.first + pulses) % self.meter.pulses)
+
+    def first_bar_index(self) -> int:
+        """The index in beats of the first real bar line of the stamped MIDI: the first
+        bar line at least half a bar after time 0 (before it sits a pickup bar)."""
+        P = self.meter.pulses
+        i = self.first
+        while self.beats[i] < 0.5 * P * float(self.period_at(max(self.beats[i], 0.0))):
+            i += P
+        return i
+
+    def bpm_range(self) -> tuple[float, float]:
+        per = 60.0 / np.diff(self.beats)
+        return float(per.min()), float(per.max())
+
+    def as_dict(self) -> dict:
+        lo, hi = self.bpm_range()
+        d = {"bpm": round(self.bpm, 4), "first_bar": round(float(self.beats[self.first_bar_index()]), 4),
+             "tempo": "map", "bpm_range": [round(lo, 2), round(hi, 2)], "first": self.first,
+             "beats": [round(float(x), 5) for x in self.beats]}
+        if self.meter != DEFAULT:
+            d["meter"] = str(self.meter)
+        return d
+
+
+MAP_THRESHOLD = 0.08     # 16ths: auto uses the map when the constant grid's source track
+#                          sits further than this from it on average (0 exact, 0.25 random)
+TEMPO_MODES = ("auto", "constant", "map")
+
+
+def use_map(constant_offset: float | None) -> bool:
+    """auto: follow the band when no constant grid fits (None) or it fits poorly."""
+    return constant_offset is None or constant_offset > MAP_THRESHOLD
+
+
+def offset_16th(times, g) -> float | None:
+    """How far the onsets sit from the grid (or map) on average, in 16ths: 0 is exact,
+    0.25 is what random onsets give."""
+    t = np.asarray(list(times), dtype=float)
+    return float(np.mean(np.abs(g.signed16(t)))) if len(t) else None
 
 
 def _onsets(times) -> np.ndarray:
@@ -255,7 +400,8 @@ def _off_fill(fine: Grid, coarse: Grid, times) -> float:
     return float(np.mean(near <= tol))
 
 
-def fit_pulse(tracks: dict[str, list[float]], beat_bpm: float, meter: Meter = DEFAULT):
+def fit_pulse(tracks: dict[str, list[float]], beat_bpm: float, meter: Meter = DEFAULT,
+              min_alignment: float = MIN_ALIGNMENT):
     """The grid in the meter's pulse, from a tracked beat. In x/4 (and x/2) the pulse is
     the tracked beat. In x/8 a tracker may have followed the eighth, the quarter or the
     dotted quarter, so try pulse = beat, beat/2 and beat/3, coarsest first.
@@ -266,11 +412,11 @@ def fit_pulse(tracks: dict[str, list[float]], beat_bpm: float, meter: Meter = DE
     positions are mostly played (OFF_FILL). An eighth-pulse 6/8 ballad with some 16th
     fill-ins keeps the eighth; a song with a note on every eighth under a quarter-note
     tracker moves to beat/2. Returns (grid on a pulse, source track, {track: alignment})
-    or None."""
+    or None. min_alignment: 0 still picks the pulse for a drifting song (the map's seed)."""
     best = None
     for d in ((1, 2, 3) if meter.den >= 8 else (1,)):
         res = fit_tracks(tracks, beat_bpm * d, meter=meter)
-        if res is None or res[2][res[1]] < MIN_ALIGNMENT:
+        if res is None or res[2][res[1]] < min_alignment:
             continue
         g = align_to_beats(res[0], [t for v in tracks.values() for t in v])
         src = tracks[res[1]]
@@ -352,7 +498,119 @@ def phase_from_notes(g: Grid, instruments) -> tuple[Grid, float]:
 
 def shift(g: Grid, beats: int) -> Grid:
     """Move bar "one" by whole pulses (the override for a wrong guess)."""
+    if isinstance(g, TempoMap):
+        return g.shift(beats)
     return replace(g, anchor=g.anchor + beats * g.beat)
+
+
+# --- the tempo map ------------------------------------------------------------------
+MAP_SR = 200             # frames per second of the beat tracker's onset envelope
+MAP_TIGHTNESS = 400      # librosa's tightness: how hard the tracker holds the tempo
+MAP_SMOOTH = 2           # pulses: each pulse time from a line through it and this many either side
+
+
+def _smooth(beats: np.ndarray, half: int = MAP_SMOOTH) -> np.ndarray:
+    """Light smoothing of the pulse times themselves (never their lengths re-summed, which
+    lets a phase error pile up): each from a straight line through its neighbours."""
+    if half < 1 or len(beats) < 3:
+        return beats
+    k = np.arange(len(beats), dtype=float)
+    out = np.empty(len(beats))
+    for i in range(len(beats)):
+        a, b = max(0, i - half), min(len(beats), i + half + 1)
+        out[i] = np.polyval(np.polyfit(k[a:b], beats[a:b], 1), k[i])
+    return out
+
+
+def _extend(beats: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    """Fill gaps the tracker left (a break) at the local pulse, and run on past both ends."""
+    out = [float(beats[0])]
+    for b in beats[1:]:
+        p = float(np.median(np.diff(out[-8:]))) if len(out) > 2 else float(b - out[-1])
+        while b - out[-1] > 1.5 * p:
+            out.append(out[-1] + p)
+        out.append(float(b))
+    p0, p1 = out[1] - out[0], out[-1] - out[-2]
+    while out[0] > lo:
+        out.insert(0, out[0] - p0)
+    while out[-1] < hi:
+        out.append(out[-1] + p1)
+    return np.array(out)
+
+
+def _track_beats(times, weights, g: Grid, end: float, tightness: float = MAP_TIGHTNESS) -> np.ndarray:
+    """Pulse times from a dynamic-programming beat tracker (librosa's) run on the onsets
+    as an envelope, each weighted by its velocity, the tempo held near g's. Loud hits
+    (kick, snare) pull the pulse onto themselves, so it cannot slip onto a 16th."""
+    import librosa
+
+    n = int((end + 2.0) * MAP_SR) + 2
+    env = np.zeros(n)
+    idx = np.clip(np.round(np.asarray(times, dtype=float) * MAP_SR).astype(int), 0, n - 1)
+    np.add.at(env, idx, np.asarray(weights, dtype=float))
+    env = np.convolve(env, np.hanning(9), mode="same")
+    _, beats = librosa.beat.beat_track(onset_envelope=env, sr=MAP_SR, hop_length=1, bpm=g.bpm,
+                                       tightness=tightness, trim=False, units="time")
+    return np.asarray(beats, dtype=float)
+
+
+def _on_the_pulse(beats: np.ndarray, all_times) -> np.ndarray:
+    """Move the pulse onto the 16th most notes start on. Every note counts (unlike
+    align_to_beats), so a beat where kick, chord and bass land together outweighs an
+    off-beat hat."""
+    m = TempoMap(beats, 0)
+    q = np.round(m.position(np.asarray(list(all_times), dtype=float)) * 4).astype(int) % 4
+    k = int(np.argmax(np.bincount(q, minlength=4)))
+    return beats if k == 0 else m.time(np.arange(len(beats)) + k / 4)
+
+
+def fit_map(times, g: Grid, end: float, all_times=None, weights=None,
+            tightness: float = MAP_TIGHTNESS, smooth: int = MAP_SMOOTH) -> np.ndarray:
+    """Pulse times that follow the onsets `times` (weighted by `weights`, say velocity)
+    through a song whose tempo drifts, from before 0 to past `end`: a beat tracker's
+    pulses (see _track_beats), gaps filled, run on past both ends, lightly smoothed
+    (_smooth), and moved onto the 16th most notes (all_times) start on. g: a grid in the
+    right pulse (its tempo is the guess). Returns an empty array when there is too little
+    to track.
+
+    The evidence (research/tempo-map/compare.py on Đurđevdan and Harman Dalı, with the
+    source track measured on held-out notes): the light smoothing leaves the drums where
+    they were and brings the other tracks closer; wider smoothing loses the drift.
+    Dropped: walking from the tightest stretch a pulse at a time, each pulse a local line
+    through the onsets rounded to 16ths (it slipped by whole 16ths); refining the
+    tracker's pulses that way; median-smoothing the pulse lengths and re-summing them
+    (every track further off)."""
+    t = np.asarray(list(times), dtype=float)
+    if len(t) < 4:
+        return np.array([])
+    w = np.ones(len(t)) if weights is None else np.asarray(weights, dtype=float)
+    beats = _track_beats(t, w, g, end, tightness)
+    if len(beats) < 3:
+        return np.array([])
+    beats = _extend(beats, min(0.0, float(t.min())) - 1e-9, max(end, float(t.max())) + 1e-9)
+    return _on_the_pulse(_smooth(beats, smooth), all_times if all_times is not None else t)
+
+
+def _warp(m: TempoMap, instruments) -> list[pretty_midi.Instrument]:
+    """The instruments with every time replaced by its place in pulses."""
+    out = []
+    for inst in instruments:
+        w = pretty_midi.Instrument(inst.program, is_drum=inst.is_drum, name=inst.name)
+        if inst.notes:
+            s = m.position([n.start for n in inst.notes])
+            e = m.position([n.end for n in inst.notes])
+            w.notes = [pretty_midi.Note(n.velocity, n.pitch, float(a), float(b))
+                       for n, a, b in zip(inst.notes, s, e)]
+        out.append(w)
+    return out
+
+
+def phase_map(m: TempoMap, instruments) -> tuple[TempoMap, float]:
+    """Bar "one" across a tempo map: phase_from_notes on the notes placed in pulses, so
+    a bar is always meter.pulses of them whatever the tempo did."""
+    unit = Grid(60.0, 0.0, m.meter)                  # one pulse = one "second"
+    g, conf = phase_from_notes(unit, _warp(m, instruments))
+    return replace(m, first=int(round(g.anchor)) % m.meter.pulses), conf
 
 
 def latency(times, g: Grid, hint: float | None = None) -> float:
@@ -411,14 +669,13 @@ def snap(inst: pretty_midi.Instrument, g: Grid, latency_s: float | None = None):
     Returns (new instrument, the latency removed)."""
     lat = latency([n.start for n in inst.notes], g) if latency_s is None else latency_s
     out = pretty_midi.Instrument(program=inst.program, is_drum=inst.is_drum, name=inst.name)
-    half = g.sixteenth / 2
     seen: dict[tuple[int, int], pretty_midi.Note] = {}
     for n in inst.notes:
-        on = max(0.0, g.snap_time(n.start - lat))
-        off = max(on + half, g.snap_time(n.end - lat, half))
+        on = max(0.0, g.snap_to(n.start - lat))
+        off = max(on + g.sixteenth_at(on) / 2, g.snap_to(n.end - lat, 2))
         note = pretty_midi.Note(n.velocity, n.pitch, on, off)
         if inst.is_drum:
-            key = (round((on - g.anchor) / g.sixteenth), n.pitch)
+            key = (g.step(on), n.pitch)
             if key in seen and seen[key].velocity >= n.velocity:
                 continue
             seen[key] = note
@@ -438,7 +695,8 @@ SOURCE_LAG_WARN = 0.1     # s: warn when the grid's own track sits this far off 
 
 def apply(pm: pretty_midi.PrettyMIDI, bpm_guess: float | None, snap_notes: bool = False,
           downbeat: int | None = None, shift_beats: int = 0, meter: Meter = DEFAULT,
-          audio: dict[str, tuple[np.ndarray, np.ndarray]] | None = None):
+          audio: dict[str, tuple[np.ndarray, np.ndarray]] | None = None,
+          tempo: str = "auto"):
     """Fit the grid to `pm`'s tracks, stamp it, and optionally snap every track.
 
     bpm_guess: the tracked beat's tempo to search near (None searches 60-200 BPM, for a
@@ -447,9 +705,16 @@ def apply(pm: pretty_midi.PrettyMIDI, bpm_guess: float | None, snap_notes: bool 
     the guessed bar is really "one" (the override). shift_beats: move bar "one" by whole
     pulses after that. audio: per track name, the onset_envelope of its own stem on the
     MIDI's timeline; a track and the source track that both line up with their audio
-    get their latency unfolded past half a 16th (see latency). Returns (new pm, info for
-    the manifest, warnings). With no usable grid, `pm` comes back untouched and
-    info["fitted"] is False."""
+    get their latency unfolded past half a 16th (see latency). tempo: "constant" (one
+    tempo), "map" (a tempo per pulse that follows the band) or "auto" (the map only when
+    the constant grid fits poorly, see use_map). Returns (new pm, info for the manifest,
+    warnings). With no usable grid, `pm` comes back untouched and info["fitted"] is
+    False."""
+    if tempo not in TEMPO_MODES:
+        raise ValueError(f"tempo must be one of {', '.join(TEMPO_MODES)}, got {tempo!r}")
+    P = meter.pulses
+    if downbeat is not None and not 1 <= downbeat <= P:
+        raise ValueError(f"downbeat must be 1 to {P}, got {downbeat}")
     warnings: list[str] = []
     tracks = {i.name or f"track {k}": [n.start for n in i.notes] for k, i in enumerate(pm.instruments)}
     if bpm_guess is None:
@@ -457,16 +722,20 @@ def apply(pm: pretty_midi.PrettyMIDI, bpm_guess: float | None, snap_notes: bool 
         if best and len(_onsets(tracks[best])) >= MIN_ONSETS:
             bpm_guess = search(tracks[best])[0].bpm
     res = None if bpm_guess is None else fit_pulse(tracks, bpm_guess, meter)
-    if res is None:
-        warnings.append("no track sits on a steady grid (too few notes, or too loose); "
-                        "the MIDI keeps its old tempo and nothing was snapped")
-        return pm, {"fitted": False}, warnings
-    g, source, fits = res
-    g, conf = phase_from_notes(g, pm.instruments)
-    P = meter.pulses
+    constant_offset = None if res is None else offset_16th(tracks[res[1]], res[0])
+    g = None
+    if tempo == "map" or (tempo == "auto" and use_map(constant_offset)):
+        fitted = None if bpm_guess is None else _fit_map_tracks(pm, tracks, bpm_guess, meter)
+        if fitted is not None:
+            g, source, fits, conf = fitted
+    if g is None:
+        if res is None:
+            warnings.append("no track sits on a steady grid (too few notes, or too loose); "
+                            "the MIDI keeps its old tempo and nothing was snapped")
+            return pm, {"fitted": False}, warnings
+        g, source, fits = res
+        g, conf = phase_from_notes(g, pm.instruments)
     if downbeat is not None:
-        if not 1 <= downbeat <= P:
-            raise ValueError(f"downbeat must be 1 to {P}, got {downbeat}")
         g = shift(g, downbeat - 1)
     g = shift(g, shift_beats)
     if downbeat is None and conf < PHASE_WARN and P > 1:
@@ -492,22 +761,52 @@ def apply(pm: pretty_midi.PrettyMIDI, bpm_guess: float | None, snap_notes: bool 
         lat = latency(starts, g, hint)
         per_track[name] = {"alignment": round(fits[name], 4) if name in fits else None,
                            "latency_ms": round(lat * 1000, 1),
-                           "grid_fit_ms": None if not starts else round(fit_ms(starts, g, lat), 1)}
+                           "grid_fit_ms": None if not starts else round(fit_ms(starts, g, lat), 1),
+                           "offset_16th": None if not starts else round(offset_16th(starts, g), 4)}
         if name in lags:
             per_track[name]["audio_lag_ms"] = round(lags[name] * 1000, 1)
         if snap_notes and inst.notes:
             out.instruments[k], _ = snap(inst, g, lat)
-    info = {"fitted": True, **g.as_dict(), "anchor": g.anchor, "source_track": source,
+    info = {"fitted": True, "tempo": "constant", **g.as_dict(), "anchor": g.anchor,
+            "source_track": source, "constant_offset_16th":
+                None if constant_offset is None else round(constant_offset, 4),
             "bar_one_confidence": round(conf, 3), "downbeat_override": downbeat,
             "shift_beats": shift_beats, "snapped": snap_notes, "tracks": per_track}
     return out, info, warnings
+
+
+def _fit_map_tracks(pm: pretty_midi.PrettyMIDI, tracks: dict[str, list[float]],
+                    bpm_guess: float, meter: Meter):
+    """The tempo map from the drums (with no drum track, the best-aligned track, as for
+    the constant grid), bar "one" found across it. The drums go first: their kick and
+    snare mark the pulse, while a dense comping track can align well overall and still
+    smear it (on Đurđevdan, following the comping lost the tempo). Returns
+    (map, source track, {track: alignment}, bar-one confidence), or None when no track
+    has enough onsets."""
+    res = fit_pulse(tracks, bpm_guess, meter, min_alignment=0.0)
+    if res is None:
+        return None
+    g, best, fits = res
+    drums = [n for n in fits if any(i.is_drum and (i.name or f"track {k}") == n
+                                    for k, i in enumerate(pm.instruments))]
+    source = max(drums, key=fits.get) if drums else best
+    end = max((n.end for i in pm.instruments for n in i.notes), default=0.0)
+    inst = next(i for k, i in enumerate(pm.instruments) if (i.name or f"track {k}") == source)
+    beats = fit_map(tracks[source], g, end, all_times=[t for v in tracks.values() for t in v],
+                    weights=[n.velocity / 127 for n in inst.notes])
+    if len(beats) < 3:
+        return None
+    m, conf = phase_map(TempoMap(beats, 0, meter), pm.instruments)
+    return m, source, fits, conf
 
 
 def stamp(pm: pretty_midi.PrettyMIDI, g: Grid) -> pretty_midi.PrettyMIDI:
     """A copy of `pm` whose tempo map puts real bar lines of the grid's meter on the grid.
     The first bar is a pickup of its own tempo that ends on the first real bar line; notes
     keep their times exactly (to the tick). The MIDI tempo counts quarter notes, so an
-    eighth pulse at 180 is written as 90 BPM."""
+    eighth pulse at 180 is written as 90 BPM. A TempoMap gets a tempo change per pulse."""
+    if isinstance(g, TempoMap):
+        return _stamp_map(pm, g)
     first = g.anchor % g.bar
     pickup = first if first >= g.bar / 2 else first + g.bar
     q = g.meter.quarters                       # the bar in quarter notes (4.0 in 4/4)
@@ -517,6 +816,25 @@ def stamp(pm: pretty_midi.PrettyMIDI, g: Grid) -> pretty_midi.PrettyMIDI:
     out._tick_scales = [(0, pickup / q / RESOLUTION), (bar_tick, 60.0 / (qpm * RESOLUTION))]
     out._update_tick_to_time(bar_tick + RESOLUTION)
     out.time_signature_changes = [pretty_midi.TimeSignature(g.meter.num, g.meter.den, 0.0)]
+    out.key_signature_changes = copy.deepcopy(pm.key_signature_changes)
+    out.instruments = copy.deepcopy(pm.instruments)
+    return out
+
+
+def _stamp_map(pm: pretty_midi.PrettyMIDI, m: TempoMap) -> pretty_midi.PrettyMIDI:
+    """stamp for a tempo map: the pickup bar, then one tempo per pulse from the first real
+    bar line on, so every pulse (and every bar line) lands on its fitted time."""
+    i0 = m.first_bar_index()
+    pickup = float(m.beats[i0])
+    q = m.meter.quarters
+    out = pretty_midi.PrettyMIDI(resolution=RESOLUTION, initial_tempo=60.0 * q / pickup)
+    bar_tick = int(round(q * RESOLUTION))
+    tpp = int(round(RESOLUTION * 4 / m.meter.den))       # ticks per pulse
+    per = np.diff(m.beats[i0:])
+    out._tick_scales = [(0, pickup / q / RESOLUTION)] + \
+        [(bar_tick + k * tpp, float(p) / tpp) for k, p in enumerate(per)]
+    out._update_tick_to_time(bar_tick + len(per) * tpp + tpp)
+    out.time_signature_changes = [pretty_midi.TimeSignature(m.meter.num, m.meter.den, 0.0)]
     out.key_signature_changes = copy.deepcopy(pm.key_signature_changes)
     out.instruments = copy.deepcopy(pm.instruments)
     return out
