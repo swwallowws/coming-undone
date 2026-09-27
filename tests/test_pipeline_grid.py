@@ -105,6 +105,36 @@ def test_drums_are_available_only_with_the_model_requirements(monkeypatch):
     assert backends.drums_available() is False
 
 
+def _main_with_bass(bass):
+    def main(stem_wav, out_mid, **kw):
+        return bass(out_mid) if stem_wav.stem == "bass" else fake_main(stem_wav, out_mid, **kw)
+    return main
+
+
+@pytest.mark.parametrize("bass", [
+    lambda out_mid: _write([], out_mid),     # a MIDI file with an empty track
+    lambda out_mid: None,                    # no MIDI file at all
+], ids=["zero-notes", "no-midi"])
+def test_a_loud_stem_with_no_notes_falls_back(run, monkeypatch, bass):
+    monkeypatch.setitem(backends.BACKENDS, "fake", _main_with_bass(bass))
+    res = run()
+    m = json.loads(res.manifest_path.read_text())
+    assert m["fallbacks"] == {"bass": "basic-pitch"}
+    by = {i.name: i for i in pretty_midi.PrettyMIDI(str(res.midi_path)).instruments}
+    assert len(by["bass"].notes) > 50
+
+
+def test_a_silent_stem_with_no_notes_says_why_it_was_not_redone(run, monkeypatch):
+    def separate(audio, out, model_name=None, device=None):
+        out.mkdir(parents=True, exist_ok=True)
+        return {s: _wav(out / f"{s}.wav", loud=s != "bass") for s in ("drums", "bass", "other", "vocals")}
+    monkeypatch.setattr("stemscribe.separate.separate", separate)
+    monkeypatch.setitem(backends.BACKENDS, "fake", _main_with_bass(lambda out_mid: _write([], out_mid)))
+    res = run()
+    assert json.loads(res.manifest_path.read_text())["fallbacks"] == {}
+    assert any("bass" in w and "silent" in w for w in res.warnings)
+
+
 def test_no_snap_keeps_note_times_and_grid_can_be_turned_off(run):
     res = run()
     pm = pretty_midi.PrettyMIDI(str(res.midi_path))

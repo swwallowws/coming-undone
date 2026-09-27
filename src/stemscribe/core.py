@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 import pathlib
 import re
@@ -381,11 +382,23 @@ def process(
 
         for stem in wanted:
             mid = _transcribe(stem, backend, backend_fn, backend_kwargs or {})
-            if mid and fallback and backend != _backends.FALLBACK_BACKEND:
-                n_notes = sum(len(i.notes) for i in pretty_midi.PrettyMIDI(str(mid)).instruments)
+            if fallback and backend != _backends.FALLBACK_BACKEND:
+                # No MIDI at all counts as zero notes: an empty stem must not dodge
+                # the fallback just because the backend wrote no file for it.
+                n_notes = (sum(len(i.notes) for i in pretty_midi.PrettyMIDI(str(mid)).instruments)
+                           if mid else 0)
                 y, sr = _sf.read(str(stem_paths[stem]), dtype="float32", always_2d=True)
                 rms = float((y ** 2).mean() ** 0.5) if y.size else 0.0
-                if _backends.is_sparse(n_notes, len(y) / sr, bpm, rms, meter.quarters):
+                if n_notes == 0 and rms <= _backends.SILENT_RMS:
+                    # Say so: otherwise an empty track with "fallbacks": {} reads as
+                    # a missed fallback (a MIDI render with no singer has a vocals
+                    # stem of pure bleed, and basic-pitch would transcribe the bleed).
+                    db = 20 * math.log10(max(rms, 1e-12))
+                    w = (f"stem {stem!r}: no notes, and the stem is near silent "
+                         f"({db:.0f} dBFS RMS), so it was not transcribed again")
+                    warnings.append(w)
+                    log.warning(w)
+                elif _backends.is_sparse(n_notes, len(y) / sr, bpm, rms, meter.quarters):
                     w = (f"stem {stem!r}: {backend} gave only {n_notes} notes; "
                          f"transcribed it again with {_backends.FALLBACK_BACKEND}")
                     warnings.append(w)
