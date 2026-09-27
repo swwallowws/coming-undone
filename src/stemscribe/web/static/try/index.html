@@ -15,6 +15,7 @@
     </script>
     <link rel="stylesheet" href="../vendor/design/tokens.css" />
     <link rel="stylesheet" href="../vendor/design/steprail.css" />
+    <link rel="stylesheet" href="../vendor/design/iconbutton.css" />
     <link rel="stylesheet" href="../vendor/design/demoshell.css" />
     <link rel="stylesheet" href="try.css" />
   </head>
@@ -23,7 +24,7 @@
       <div class="try-live">
         <p id="message" class="try-message" role="status">Loading the song…</p>
         <div class="try-row">
-          <button id="play" type="button" disabled>Play</button>
+          <button id="play" type="button" disabled data-icon="play" data-toggle data-key="Space" aria-label="Play"></button>
           <span id="song" class="try-song"></span>
           <span id="time" class="try-fine try-time"></span>
         </div>
@@ -39,7 +40,7 @@
             <button id="mode-midi" type="button" aria-pressed="false" disabled>MIDI</button>
           </span>
         </div>
-        <div class="try-stage">
+        <div class="try-stage" data-demoshell-mark>
           <canvas id="roll"></canvas>
           <p id="empty" class="try-empty">Notes show up here.</p>
         </div>

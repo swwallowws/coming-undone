@@ -2,6 +2,7 @@
 // press play, solo a part, flip it from its audio stem to the MIDI stemscribe wrote.
 // Every source runs off one AudioContext clock, made inside the first Play click.
 import { demoShell } from "../vendor/design/demoshell.js";
+import { iconButton } from "../vendor/design/iconbutton.js";
 
 const $ = (id) => document.getElementById(id);
 const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -19,8 +20,22 @@ const shell = demoShell($("demo"), {
   full: { coming: true },
   endText: "Done. Explore freely.",
   onReset: startOver,
+  primary: { toggle: () => playBtn.toggle(), label: "play" },
 });
 const rail = shell.rail;
+
+const playBtn = iconButton($("play"), {
+  onPress: (pressed) => {
+    if (!data) return;
+    if (pressed) {
+      startPlayback();
+      did.play = true;
+      progress();
+    } else {
+      stopPlayback();
+    }
+  },
+});
 
 // what the visitor has done so far; the rail ticks in order, so a step done early
 // is ticked as soon as the ones before it are
@@ -155,7 +170,7 @@ function newSynthBus() {
   scheduledTo = songTime();
 }
 
-function play() {
+function startPlayback() {
   ensureContext();
   if (pos >= data.duration - 0.05) pos = 0;
   t0 = ctx.currentTime + 0.05;
@@ -171,11 +186,11 @@ function play() {
   scheduledTo = pos;
   schedule();
   timer = setInterval(schedule, 50);
-  $("play").textContent = "Pause";
+  playBtn.setPressed(true);
   requestAnimationFrame(frame);
 }
 
-function pause(to = songTime()) {
+function stopPlayback(to = songTime()) {
   if (!playing) return;
   pos = Math.max(0, Math.min(to, data.duration));
   playing = false;
@@ -185,7 +200,7 @@ function pause(to = songTime()) {
   }
   sources = [];
   if (synthBus) newSynthBus();
-  $("play").textContent = "Play";
+  playBtn.setPressed(false);
   paintTime();
   drawWave();
   drawRoll();
@@ -196,7 +211,7 @@ function schedule() {
   if (!playing) return;
   const now = songTime();
   if (now >= data.duration) {
-    pause(data.duration);
+    stopPlayback(data.duration);
     pos = 0;
     return;
   }
@@ -250,17 +265,6 @@ function hit(pitch, amp, at) {
 
 // ---------- controls
 
-$("play").addEventListener("click", () => {
-  if (!data) return;
-  if (playing) {
-    pause();
-    return;
-  }
-  play();
-  did.play = true;
-  progress();
-});
-
 function setSolo(id) {
   // "all", or pressing the soloed part again, goes back to the full mix
   solo = id === null || id === solo ? null : id;
@@ -300,7 +304,7 @@ function paintControls() {
 }
 
 function startOver() {
-  pause();
+  stopPlayback();
   pos = 0;
   solo = null;
   for (const id of Object.keys(modes)) modes[id] = "audio";
@@ -317,8 +321,8 @@ $("wave").addEventListener("click", (e) => {
   const r = $("wave").getBoundingClientRect();
   const t = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1) * data.duration;
   if (playing) {
-    pause(t);
-    play();
+    stopPlayback(t);
+    startPlayback();
   } else {
     pos = t;
     paintTime();
