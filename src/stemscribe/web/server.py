@@ -365,6 +365,46 @@ def job_roll(jid: str) -> dict:
     return {"end": float(pm.get_end_time()), "tracks": tracks}
 
 
+def _finished_midi(jid: str):
+    import pretty_midi
+
+    job = _job(jid)
+    if job.status != "done" or not job.result or not job.result.get("midi"):
+        raise HTTPException(409, "job is not finished")
+    return job, pretty_midi.PrettyMIDI(str(job.dir / job.result["midi"]))
+
+
+@app.get("/api/jobs/{jid}/parts")
+def job_parts(jid: str) -> dict:
+    """Every track of the finished MIDI as its own part, drums included, for the page's
+    per-part view: its name, the file it downloads as, and its notes
+    [pitch, start, end, velocity]."""
+    _, pm = _finished_midi(jid)
+    parts = [{"name": inst.name, "file": f"{inst.name}.mid", "drum": bool(inst.is_drum),
+              "notes": [[int(n.pitch), round(float(n.start), 4), round(float(n.end), 4), int(n.velocity)]
+                        for n in inst.notes]}
+             for inst in pm.instruments]
+    return {"end": float(pm.get_end_time()), "parts": parts}
+
+
+@app.get("/api/jobs/{jid}/parts/{name}.mid")
+def part_midi(jid: str, name: str):
+    """One track of the finished MIDI as a file of its own, with the same tempo map, bar
+    lines and meter, so it drops into a DAW lined up with the rest."""
+    job, pm = _finished_midi(jid)
+    keep = [inst for inst in pm.instruments if inst.name == name]
+    if not keep:
+        raise HTTPException(404, "no such part")
+    pm.instruments = keep
+    parts = job.dir / "out" / "parts"
+    parts.mkdir(parents=True, exist_ok=True)
+    target = parts / f"{name}.mid"
+    if not target.resolve().is_relative_to(parts.resolve()):
+        raise HTTPException(404, "no such part")
+    pm.write(str(target))
+    return FileResponse(target, filename=target.name, media_type="audio/midi")
+
+
 @app.get("/api/jobs/{jid}/files/{path:path}")
 def get_file(jid: str, path: str):
     job = _job(jid)

@@ -2,6 +2,7 @@
 a unit test, and the pipeline is covered elsewhere. What matters here is the
 API contract: serialization, event delivery, and not serving arbitrary files.
 """
+import io
 import json
 import pathlib
 
@@ -246,6 +247,56 @@ def test_roll_lists_each_tracks_pitched_notes(client, tmp_path):
     roll = client.get("/api/jobs/j1/roll").json()
     assert roll["tracks"] == [{"name": "melody", "notes": [[72, 0.5, 1.0, 100]]}]
     assert roll["end"] == pytest.approx(1.0)
+
+
+def _two_part_job(tmp_path):
+    from stemscribe import grid as G
+    job = make_job(tmp_path, status="done")
+    out = job.dir / "out"
+    out.mkdir(parents=True, exist_ok=True)
+    pm = pretty_midi.PrettyMIDI()
+    bass = pretty_midi.Instrument(program=33, name="bass")
+    bass.notes.append(pretty_midi.Note(velocity=80, pitch=40, start=1.0, end=1.5))
+    kit = pretty_midi.Instrument(program=0, name="drums", is_drum=True)
+    kit.notes.append(pretty_midi.Note(velocity=100, pitch=36, start=0.0, end=0.1))
+    empty = pretty_midi.Instrument(program=53, name="melody")
+    pm.instruments += [empty, bass, kit]
+    G.stamp(pm, G.Grid(114.0, 0.5)).write(str(out / "song.mid"))
+    job.result = {"midi": "out/song.mid"}
+    return job, out
+
+
+def test_parts_list_every_track_with_its_file_name(client, tmp_path):
+    _two_part_job(tmp_path)
+    r = client.get("/api/jobs/j1/parts").json()
+    # the empty melody track never reaches the file, so it is no part
+    assert [(p["name"], p["file"], p["drum"]) for p in r["parts"]] == [
+        ("bass", "bass.mid", False), ("drums", "drums.mid", True)]
+    assert r["parts"][0]["notes"] == [pytest.approx([40, 1.0, 1.5, 80], abs=2e-3)]
+    assert r["parts"][1]["notes"] == [pytest.approx([36, 0.0, 0.1, 100], abs=2e-3)]
+
+
+def test_part_midi_is_that_track_alone_on_the_same_grid(client, tmp_path):
+    _two_part_job(tmp_path)
+    r = client.get("/api/jobs/j1/parts/bass.mid")
+    assert r.status_code == 200
+    assert 'filename="bass.mid"' in r.headers["content-disposition"]
+    one = pretty_midi.PrettyMIDI(io.BytesIO(r.content))
+    whole = pretty_midi.PrettyMIDI(str(tmp_path / "j1" / "out" / "song.mid"))
+    assert [i.name for i in one.instruments] == ["bass"]
+    assert one.instruments[0].notes[0].start == pytest.approx(1.0, abs=2e-3)
+    assert one.get_downbeats()[:4] == pytest.approx(whole.get_downbeats()[:4], abs=2e-3)
+
+
+def test_part_midi_of_an_unknown_part_404s(client, tmp_path):
+    _two_part_job(tmp_path)
+    assert client.get("/api/jobs/j1/parts/vocals.mid").status_code == 404
+    assert client.get("/api/jobs/j1/parts/..%2Fsong.mid").status_code == 404
+
+
+def test_parts_of_an_unfinished_job_409s(client, tmp_path):
+    make_job(tmp_path, status="running")
+    assert client.get("/api/jobs/j1/parts").status_code == 409
 
 
 def test_roll_of_an_unfinished_job_409s(client, tmp_path):
