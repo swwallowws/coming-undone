@@ -112,5 +112,5 @@ def test_freeze_copies_the_page_and_the_design_system(tmp_path):
     out = tmp_path / "dist"
     _load().freeze(_job(tmp_path), out, encode=False)
     for f in ("try/index.html", "try/try.js", "try/try.css",
-              "vendor/design/tokens.css", "vendor/design/steprail.js"):
+              "vendor/design/tokens.css", "vendor/design/steprail.js", "favicons/favicon.svg"):
         assert (out / f).is_file(), f

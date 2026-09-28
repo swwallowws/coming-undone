@@ -40,7 +40,7 @@ stemscribe-grid = "stemscribe.cli:grid_main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"stemscribe.web" = ["static/*", "static/vendor/design/*", "static/vendor/design/fonts/*"]
+"stemscribe.web" = ["static/*", "static/favicons/*", "static/vendor/design/*", "static/vendor/design/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

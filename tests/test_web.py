@@ -46,6 +46,13 @@ def test_page_uses_the_shared_design_system(client):
     assert client.get("/vendor/design/fonts/Archivo.woff2").status_code == 200
 
 
+def test_page_links_a_favicon_that_resolves(client):
+    page = client.get("/").text
+    for href in ("/favicons/favicon.svg", "/favicons/favicon-32.png", "/favicons/apple-touch-icon.png"):
+        assert href in page
+        assert client.get(href).status_code == 200, href
+
+
 def test_basic_pitch_is_not_flagged_noncommercial(client):
     cfg = client.get("/api/config").json()
     bp = next(b for b in cfg["backends"] if b["name"] == "basic-pitch")

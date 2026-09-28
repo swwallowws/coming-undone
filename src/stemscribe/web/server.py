@@ -37,6 +37,8 @@ STATIC = pathlib.Path(__file__).parent / "static"
 app = FastAPI(title="stemscribe", version=__version__)
 # the shared design system (tokens, fonts), copied in by design/sync.sh
 app.mount("/vendor", StaticFiles(directory=STATIC / "vendor"), name="vendor")
+# the tab icon, copied in by the showcase's `npm run favicons -- --copy`
+app.mount("/favicons", StaticFiles(directory=STATIC / "favicons"), name="favicons")
 
 
 @dataclass

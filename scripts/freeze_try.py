@@ -98,6 +98,7 @@ def freeze(job_dir, out_dir, *, encode: bool = True, title: str | None = None,
         if f.is_file():
             shutil.copy2(f, page / f.name)
     shutil.copytree(STATIC / "vendor" / "design", out / "vendor" / "design", dirs_exist_ok=True)
+    shutil.copytree(STATIC / "favicons", out / "favicons", dirs_exist_ok=True)
 
     pm = pretty_midi.PrettyMIDI(str(mids[0]))
     tracks = {i.name: i for i in pm.instruments}
