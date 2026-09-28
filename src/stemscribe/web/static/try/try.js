@@ -21,7 +21,7 @@ const shell = demoShell($("demo"), {
   full: { coming: true },
   endText: "Done. Explore freely.",
   onReset: startOver,
-  primary: { toggle: () => playBtn.toggle(), label: "play" },
+  primary: { toggle: () => playBtn.toggle() },   // Space plays; no "Space: play" hint under the rail
 });
 const rail = shell.rail;
 
@@ -48,6 +48,7 @@ function progress() {
 let data = null;
 let buffers = {}; // part id -> AudioBuffer
 let peaks = null;
+const stemPeaks = {}; // part id -> the stem's own peaks, drawn while you hear it as audio
 let ctx = null, master = null, gains = {}, sources = [], synthBus = null, noise = null;
 let playing = false, pos = 0, t0 = 0, scheduledTo = 0, timer = 0;
 let solo = null; // part id or null
@@ -82,7 +83,10 @@ async function load() {
     const get = async (url) => dec.decodeAudioData(await (await fetch(url)).arrayBuffer());
     const [mix, ...stems] = await Promise.all([get(data.mix), ...data.parts.map((p) => get(p.audio))]);
     peaks = computePeaks(mix, 1200);
-    data.parts.forEach((p, i) => (buffers[p.id] = stems[i]));
+    data.parts.forEach((p, i) => {
+      buffers[p.id] = stems[i];
+      stemPeaks[p.id] = computePeaks(stems[i], Math.ceil(data.duration * 100)); // 10 ms columns
+    });
   } catch (e) {
     $("message").textContent = "The audio did not load. Reload to try again.";
     console.warn(e);
@@ -405,16 +409,53 @@ function view(now) {
   return [first + k * len, first + (k + 1) * len];
 }
 
+// the soloed part's audio stem, in the same four-bar view as its notes: bar lines, the
+// stem's waveform in the accent (what has played full strength), the playhead in ink
+function drawStem(cv) {
+  const c = sizeCanvas(cv);
+  if (!c) return;
+  const { g, w, h } = c;
+  const pk = stemPeaks[solo], now = songTime();
+  g.fillStyle = resolved("--ground-2");
+  g.fillRect(0, 0, w, h);
+  const [a, b] = view(now), xs = w / (b - a), x = (t) => (t - a) * xs;
+  g.fillStyle = resolved("--line");
+  for (const t of data.bars) if (t >= a && t <= b) g.fillRect(Math.round(x(t)), 0, 1, h);
+  g.fillRect(0, h / 2, w, 1);
+  if (pk) {
+    let top = 0;
+    for (const v of pk) top = Math.max(top, v);
+    const scale = top > 0 ? 1 / top : 1;
+    g.fillStyle = resolved("--acc");
+    for (let px = 0; px < w; px += 3) {
+      const t = a + px / xs;
+      if (t < 0 || t >= data.duration) continue;
+      const v = pk[Math.floor((t / data.duration) * pk.length)] * scale;
+      g.globalAlpha = playing && t <= now ? 1 : 0.4;
+      const amp = Math.max(1, v * (h / 2 - 6));
+      g.fillRect(px, h / 2 - amp, 2, amp * 2);
+    }
+    g.globalAlpha = 1;
+  }
+  if (now > 0 && !reduced.matches) {
+    g.fillStyle = resolved("--ink");
+    g.fillRect(Math.round(x(now)), 0, 1, h);
+  }
+}
+
 function drawRoll() {
   const cv = $("roll");
-  // a soloed part shows its notes either way: faint while you hear its audio stem,
-  // full once you flip it to the MIDI
+  // a soloed part shows what you hear: its audio stem as a waveform, or its notes once
+  // you flip it to the MIDI
   const show = !!data && solo !== null;
   cv.classList.toggle("off", !show);
   $("empty").hidden = show || !data;
   if (!data) return;
   if (!show) {
-    $("empty").textContent = "Pick a part to see its notes.";
+    $("empty").textContent = "Pick a part to see it on its own.";
+  } else if (!midiOn()) {
+    drawStem(cv);
+    return;
   } else if (!part(solo).notes.length) {
     // a stem can come out with no notes (nothing above the floor); say so plainly
     cv.classList.add("off");
@@ -446,7 +487,6 @@ function drawRoll() {
   const [a, b] = view(now), xs = w / (b - a), x = (t) => (t - a) * xs;
   g.fillStyle = resolved("--line");
   for (const t of data.bars) if (t >= a && t <= b) g.fillRect(Math.round(x(t)), 0, 1, h);
-  g.globalAlpha = midiOn() ? 1 : 0.6;
   for (const [s, e, q, v] of p.notes) {
     if (e < a || s > b) continue;
     const on = playing && now >= s && now < e + (p.drums ? 0.08 : 0);
