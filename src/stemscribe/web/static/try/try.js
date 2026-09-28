@@ -10,7 +10,7 @@ const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
 const shell = demoShell($("demo"), {
-  product: "stemscribe",
+  product: "Coming Undone",
   title: "Split a recording and write down every note.",
   intro: "One song, processed ahead of time.",
   steps: [

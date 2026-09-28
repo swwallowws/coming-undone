@@ -34,7 +34,7 @@ from ..prepare import PrepareParams
 
 STATIC = pathlib.Path(__file__).parent / "static"
 
-app = FastAPI(title="stemscribe", version=__version__)
+app = FastAPI(title="Coming Undone", version=__version__)
 # the shared design system (tokens, fonts), copied in by design/sync.sh
 app.mount("/vendor", StaticFiles(directory=STATIC / "vendor"), name="vendor")
 # the tab icon, copied in by the showcase's `npm run favicons -- --copy`
@@ -424,7 +424,7 @@ def main(argv: list[str] | None = None) -> int:
 
     import uvicorn
 
-    p = argparse.ArgumentParser(prog="stemscribe-web", description="stemscribe local web UI")
+    p = argparse.ArgumentParser(prog="stemscribe-web", description="Coming Undone local web UI")
     p.add_argument("--host", default="127.0.0.1", help="default: localhost only")
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--jobs-dir", default=None, help=f"default: {JOBS_ROOT}")
@@ -436,7 +436,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.host not in ("127.0.0.1", "localhost"):
         print(f"! serving on {args.host}: this UI has no auth and runs local jobs")
-    print(f"stemscribe {__version__}  ->  http://{args.host}:{args.port}")
+    print(f"Coming Undone {__version__}  ->  http://{args.host}:{args.port}")
     print(f"jobs in {JOBS_ROOT}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0

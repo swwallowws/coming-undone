@@ -1,4 +1,8 @@
-# stemscribe
+# Coming Undone
+
+simply split.
+
+Formerly stemscribe; the code, package and commands keep that name.
 
 Song in, stems + labeled multi-track MIDI out.
 
