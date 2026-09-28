@@ -37,13 +37,15 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "stemscribe" / "web" / "static"
 
 #: stem -> the label on its button, in the order the buttons appear.
+# Named as the MIDI names its tracks, so a part keeps one name whether you hear its
+# audio stem or the notes written from it.
 PART_NAMES = {
     "drums": "drums",
     "bass": "bass",
-    "vocals": "vocals",
+    "vocals": "melody",
     "guitar": "guitar",
     "piano": "piano",
-    "other": "the rest",
+    "other": "comping",
 }
 
 

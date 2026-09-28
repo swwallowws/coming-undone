@@ -742,7 +742,9 @@ function drawRoll() {
     const col = toRgb(TRACK_TOKEN[t.name] || "--ink-mut");
     for (const [p, s, e, v] of t.notes) {
       const on = playing && now >= s && now < e;
-      g.fillStyle = on ? rgbStr(col) : mixRgb(col, ground, 0.35 + 0.65 * v / 127);
+      // roll.md: pitched notes shaded by pitch (40 to 100 percent, low to high), drums by velocity
+      const share = t.name === "drums" ? 0.35 + 0.65 * v / 127 : 0.4 + 0.6 * (p - lo - 1) / Math.max(1, hi - lo - 2);
+      g.fillStyle = on ? rgbStr(col) : mixRgb(col, ground, share);
       const x = (s - rollStart) * xs, nw = Math.max(1, (e - s) * xs - 1), ny = y(p), nh = Math.max(1, rh - 1);
       g.fillRect(x, ny, nw, nh);
       if (on && nh > 2) { g.strokeStyle = rgbStr(ink); g.strokeRect(x + 0.5, ny + 0.5, nw - 1, nh - 1); }

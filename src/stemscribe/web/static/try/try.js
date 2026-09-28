@@ -3,6 +3,7 @@
 // Every source runs off one AudioContext clock, made inside the first Play click.
 import { demoShell } from "../vendor/design/demoshell.js";
 import { iconButton } from "../vendor/design/iconbutton.js";
+import { noteColor } from "../vendor/design/tokens.js";
 
 const $ = (id) => document.getElementById(id);
 const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -52,7 +53,8 @@ let playing = false, pos = 0, t0 = 0, scheduledTo = 0, timer = 0;
 let solo = null; // part id or null
 const modes = {}; // part id -> "audio" | "midi"
 
-const songTime = () => (playing ? pos + (ctx.currentTime - t0) : pos);
+// playback starts 50 ms after the click, so clamp that lead-in to the start
+const songTime = () => (playing ? Math.max(pos, pos + (ctx.currentTime - t0)) : pos);
 const part = (id) => data.parts.find((p) => p.id === id);
 const midiOn = () => solo !== null && modes[solo] === "midi";
 
@@ -405,12 +407,14 @@ function view(now) {
 
 function drawRoll() {
   const cv = $("roll");
-  const show = !!data && midiOn();
+  // a soloed part shows its notes either way: faint while you hear its audio stem,
+  // full once you flip it to the MIDI
+  const show = !!data && solo !== null;
   cv.classList.toggle("off", !show);
   $("empty").hidden = show || !data;
   if (!data) return;
   if (!show) {
-    $("empty").textContent = "Notes show up here.";
+    $("empty").textContent = "Pick a part to see its notes.";
   } else if (!part(solo).notes.length) {
     // a stem can come out with no notes (nothing above the floor); say so plainly
     cv.classList.add("off");
@@ -425,8 +429,15 @@ function drawRoll() {
   const ground = toRgb("--ground-2"), band = toRgb("--band"), ink = toRgb("--ink"), acc = toRgb("--acc");
   g.fillStyle = rgbStr(ground);
   g.fillRect(0, 0, w, h);
-  const ps = p.notes.map((n) => n[2]);
-  const lo = (ps.length ? Math.min(...ps) : 48) - 1, hi = (ps.length ? Math.max(...ps) : 72) + 1;
+  // the pitch range in view: notes within an octave and a half of the part's median, at
+  // least an octave, so a few stray notes (bleed from another instrument) don't squash the
+  // part's own line; the strays fall outside the view
+  const ps = p.notes.map((n) => n[2]).sort((m, n) => m - n);
+  const mid = ps.length ? ps[Math.floor(ps.length / 2)] : 60;
+  const near = ps.filter((q) => Math.abs(q - mid) <= 18);
+  let nlo = near.length ? near[0] : 48, nhi = near.length ? near[near.length - 1] : 72;
+  if (nhi - nlo < 12) { const pad = Math.ceil((12 - (nhi - nlo)) / 2); nlo -= pad; nhi += pad; }
+  const lo = nlo - 1, hi = nhi + 1;
   const rh = h / (hi - lo + 1), y = (q) => h - (q - lo + 1) * rh;
   if (!p.drums) {
     g.fillStyle = rgbStr(band);
@@ -435,10 +446,13 @@ function drawRoll() {
   const [a, b] = view(now), xs = w / (b - a), x = (t) => (t - a) * xs;
   g.fillStyle = resolved("--line");
   for (const t of data.bars) if (t >= a && t <= b) g.fillRect(Math.round(x(t)), 0, 1, h);
+  g.globalAlpha = midiOn() ? 1 : 0.6;
   for (const [s, e, q, v] of p.notes) {
     if (e < a || s > b) continue;
     const on = playing && now >= s && now < e + (p.drums ? 0.08 : 0);
-    g.fillStyle = on ? rgbStr(acc) : mixRgb(acc, ground, 0.35 + 0.65 * (v / 127));
+    // roll.md: pitched notes shaded by pitch (40 to 100 percent accent, low to high), drums by velocity
+    g.fillStyle = on ? rgbStr(acc) : p.drums ? mixRgb(acc, ground, 0.35 + 0.65 * (v / 127))
+      : noteColor(rgbStr(acc), rgbStr(ground), q, nlo, nhi);
     const nx = x(s), nw = Math.max(p.drums ? 3 : 1, (e - s) * xs - 1), ny = y(q), nh = Math.max(1, rh - 1);
     g.fillRect(nx, ny, nw, nh);
     if (on && nh > 2) {
@@ -446,6 +460,7 @@ function drawRoll() {
       g.strokeRect(nx + 0.5, ny + 0.5, nw - 1, nh - 1);
     }
   }
+  g.globalAlpha = 1;
   if (now > 0 && !reduced.matches) {
     g.fillStyle = rgbStr(ink);
     g.fillRect(Math.round(x(now)), 0, 1, h);
