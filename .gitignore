@@ -27,6 +27,12 @@ inputs/
 try-work/
 try-dist/
 
+# the Hugging Face Space as staged for pushing (scripts/stage_space.py)
+space-dist/
+
+# local scratch: probe scripts, test clips, screenshots
+scratch/
+
 # secrets (yt-dlp cookie exports, env files, HF tokens)
 .env
 .env.*

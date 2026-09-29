@@ -309,3 +309,94 @@ def test_parts_of_an_unfinished_job_409s(client, tmp_path):
 def test_roll_of_an_unfinished_job_409s(client, tmp_path):
     make_job(tmp_path, status="running")
     assert client.get("/api/jobs/j1/roll").status_code == 409
+
+
+# ---- the public page's "This computer" engine: CORS, private network access, options
+
+PUBLIC = webapp.PUBLIC_ORIGINS[0]
+
+
+@pytest.mark.parametrize("origin", [PUBLIC, "http://localhost:7860", "http://127.0.0.1:8002"])
+def test_allowed_origins_get_cors_headers(client, origin):
+    r = client.get("/api/config", headers={"Origin": origin})
+    assert r.headers["access-control-allow-origin"] == origin
+
+
+@pytest.mark.parametrize("origin", ["https://evil.example", "http://localhost.evil.example"])
+def test_other_origins_get_no_cors(client, origin):
+    r = client.get("/api/config", headers={"Origin": origin})
+    assert "access-control-allow-origin" not in r.headers
+    pre = client.options("/api/jobs", headers={"Origin": origin, "Access-Control-Request-Method": "POST"})
+    assert pre.status_code == 403
+
+
+def test_preflight_answers_private_network_access(client):
+    """A public https page calling http://localhost: Chrome sends this preflight first."""
+    r = client.options("/api/jobs", headers={
+        "Origin": PUBLIC, "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Private-Network": "true"})
+    assert r.status_code == 204
+    assert r.headers["access-control-allow-origin"] == PUBLIC
+    assert r.headers["access-control-allow-private-network"] == "true"
+    assert "POST" in r.headers["access-control-allow-methods"]
+
+
+def test_events_stream_carries_cors(client, tmp_path):
+    job = make_job(tmp_path)
+    job.emit("done", "finished")
+    job.status = "done"
+    with client.stream("GET", "/api/jobs/j1/events", headers={"Origin": PUBLIC}) as r:
+        assert r.headers["access-control-allow-origin"] == PUBLIC
+        assert "finished" in "".join(r.iter_text())
+
+
+def test_allow_origin_flag_adds_a_site(monkeypatch, tmp_path):
+    monkeypatch.setattr(webapp, "PUBLIC_ORIGINS", list(webapp.PUBLIC_ORIGINS))
+    monkeypatch.setattr(webapp, "JOBS_ROOT", webapp.JOBS_ROOT)
+    monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
+    webapp.main(["--allow-origin", "https://coming-undone.example/", "--jobs-dir", str(tmp_path)])
+    assert webapp.origin_allowed("https://coming-undone.example")
+
+
+def test_default_port_is_where_the_page_looks():
+    page = (pathlib.Path(webapp.STATIC) / "index.html").read_text()
+    assert webapp.DEFAULT_PORT == 8002 and "http://localhost:8002" in page
+
+
+def test_downbeat_and_snap_reach_process(client, tmp_path, monkeypatch):
+    r, seen = _post_job(client, tmp_path, monkeypatch, meter="3/4", downbeat="3", snap="true")
+    assert r.status_code == 200 and seen["downbeat"] == 3 and seen["snap"] is True
+    r, seen = _post_job(client, tmp_path, monkeypatch)
+    assert seen["downbeat"] is None and seen["snap"] is False
+
+
+def test_downbeat_past_the_meter_is_refused(client, tmp_path, monkeypatch):
+    r, seen = _post_job(client, tmp_path, monkeypatch, meter="3/4", downbeat="4")
+    assert r.status_code == 400 and not seen
+
+
+def test_page_has_the_runs_switch_and_one_config(client):
+    page = client.get("/").text
+    assert "Runs:" in page and 'data-engine="online"' in page and 'data-engine="local"' in page
+    assert 'space: params.get("space") || "swwallowws/coming-undone"' in page
+    assert page.count("formspree.io") == 1                  # the endpoint lives in CONFIG only
+    for field in ('name="email"', 'type="email"', "required", 'name="_gotcha"', 'name="_subject"'):
+        assert field in page
+    assert "—" not in page
+
+
+def test_page_online_limit_matches_the_space():
+    import re
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "space"))
+    import split
+    page = (pathlib.Path(webapp.STATIC) / "index.html").read_text()
+    assert float(re.search(r"onlineMaxSeconds: ([\d.]+)", page).group(1)) == split.MAX_SECONDS
+
+
+def test_engines_and_gradio_client_are_served(client):
+    js = client.get("/js/engines.js")
+    assert js.status_code == 200 and "export function onlineEngine" in js.text
+    g = client.get("/vendor/gradio-client/browser.js")
+    assert g.status_code == 200 and "handle_file" in g.text
+    assert client.get("/vendor/gradio-client/LICENSE").status_code == 200

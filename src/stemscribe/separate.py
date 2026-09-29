@@ -14,6 +14,11 @@ import torch
 
 SOURCES = ("drums", "bass", "other", "vocals")
 
+#: model name -> a demucs model already loaded and placed on its device. The Hugging
+#: Face Space fills this at start-up (ZeroGPU wants models on cuda at module level);
+#: a preloaded model is used as it is, never reloaded or moved back to the CPU.
+PRELOADED: dict = {}
+
 
 def separate(
     audio_path: str | pathlib.Path,
@@ -40,8 +45,10 @@ def separate(
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    model = get_model(model_name)
-    model.cpu()
+    model = PRELOADED.get(model_name)
+    if model is None:
+        model = get_model(model_name)
+        model.cpu()
     model.eval()
 
     wav = AudioFile(audio_path).read(

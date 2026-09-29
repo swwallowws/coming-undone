@@ -130,7 +130,7 @@ applies to the audio going in.
 ### Web UI
 
 ```bash
-stemscribe-web            # → http://127.0.0.1:8000
+stemscribe-web            # → http://127.0.0.1:8002
 ```
 
 Drop a file, watch progress stream, audition stems, download MIDI. Tempo is
@@ -139,6 +139,28 @@ the alternates are one click away and re-stamp instantly.
 
 It is **localhost-only by design**: no auth, runs jobs on your machine, reads
 and writes your files. Don't expose it.
+
+### Where a run happens (the Runs: switch)
+
+The page has a **Runs:** switch with the engines it can use:
+
+- **Online** (default): the Hugging Face Space in `space/` (ZeroGPU), called through
+  Gradio's JavaScript client (vendored in `web/static/vendor/gradio-client/`). Up to
+  30 s of audio per run; every visitor has their own daily GPU quota (2 minutes
+  signed out, 5 with a free Hugging Face account), and running out offers the other
+  engines. The Space id is `CONFIG.space` at the top of the page's script; `?space=`
+  in the page's address overrides it (a local Gradio URL, for testing).
+- **This computer**: this server, on port 8002. Shown only when it answers. Full
+  quality, whole songs, nothing leaves the machine. It sends CORS headers for the
+  public page's origin (`PUBLIC_ORIGINS` in `web/server.py`, more with
+  `--allow-origin`) and for localhost. From a public https page, Chrome asks the
+  visitor before reaching localhost, so the page only looks when the permission is
+  already granted or the visitor clicks "look for it".
+- **In your browser**: planned, shown as "later".
+
+`space/README.md` has the Space's API, licences and set-up;
+`scripts/stage_space.py` copies `space/` and the package into `space-dist/`, ready to
+push to the Space.
 
 ### Outputs
 
@@ -487,6 +509,13 @@ weights mostly carry no licence, so they are no better for a commercial path. Th
 first commercial candidate is the Mel-Band-Roformer vocal checkpoint by Kimberley
 Jensen, MIT since April 2026 (vocals only; the other stems still need a licensed
 model). Revisit before any commercial release.
+
+**The public page and its Space are free and non-commercial.** The Online engine
+(`space/`) runs htdemucs (research-only weights) and MuScriptor (CC BY-NC 4.0, gated:
+the Space needs an `HF_TOKEN` of an account that accepted its terms). Neither is
+bundled: the Space downloads every model at start-up from its official source.
+Charging for the Space, or for anything built on its output, needs a different
+separator and basic-pitch first.
 
 **basic-pitch is the commercial-safe transcription path** (confirmed 2026-09-25):
 with `STEMSCRIBE_COMMERCIAL=1`, MuScriptor hard-fails before separation starts and

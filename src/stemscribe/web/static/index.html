@@ -8,6 +8,11 @@
 <link rel="icon" href="/favicons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/favicons/apple-touch-icon.png">
 <link rel="stylesheet" href="/vendor/design/tokens.css">
+<script>
+  // ?theme=paper|night pins the theme, like the demos; otherwise it follows the system
+  try { const t = new URLSearchParams(location.search).get("theme");
+        if (t === "paper" || t === "night") document.documentElement.dataset.theme = t; } catch (_) {}
+</script>
 <style>
   :root { --melody: var(--acc); --bass: var(--ink); --comping: var(--ink-mut); }
   * { box-sizing: border-box; }
@@ -134,6 +139,27 @@
   .wave-head, .wave-foot { display: flex; align-items: baseline; gap: 8px; }
   .wave-foot { font-size: 12px; margin-top: 6px; min-height: 22px; align-items: center; }
   #wave { display: block; width: 100%; height: 96px; margin-top: 10px; cursor: crosshair; touch-action: none; }
+  /* where the run happens: the Runs: switch, a line saying where, and the contact form */
+  .runs { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .runs .label { color: var(--ink-mut); font-size: 13px; }
+  .choice button:disabled { opacity: 1; color: var(--ink-mut); border-style: dashed; }
+  .soon { font-family: var(--font-mono); font-size: 11px; margin-left: 6px; }
+  .where { color: var(--ink-mut); font-size: 13px; margin: 0 0 22px; max-width: 62ch; }
+  .where a { color: var(--ink-mut); white-space: nowrap; }
+  .where a:hover { color: var(--ink); }
+  #contact { border-left: 2px solid var(--acc); padding: 2px 0 4px 14px; margin: -8px 0 24px; max-width: 34rem; }
+  #contact p { margin: 0 0 12px; }
+  #contact form { display: grid; gap: 10px; }
+  #contact label.f { margin-bottom: 2px; }
+  #contact textarea { width: 100%; min-height: 5.5em; font: inherit; color: var(--ink); background: var(--ground-2);
+    border: var(--hairline); border-radius: 0; padding: 6px 8px; resize: vertical; }
+  #contact textarea:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
+  #contact input[type=email] { width: 100%; font: inherit; color: var(--ink); background: var(--ground-2);
+    border: var(--hairline); border-radius: 0; padding: 6px 8px; }
+  #contact input[type=email]:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
+  .trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  .err-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  #err.gentle { font-family: var(--font-sans); font-size: 14px; }
   @media (max-width: 600px) {
     .form-grid { grid-template-columns: 1fr; gap: 4px; }
     .form-grid > .label { padding-top: 14px; }
@@ -152,6 +178,28 @@
 </header>
 <div class="wrap">
   <div class="panel" id="form">
+    <div class="runs" role="group" aria-label="Where the run happens">
+      <span class="label">Runs:</span>
+      <span class="choice" id="engine-choice">
+        <button data-engine="online">Online</button><button data-engine="local" class="hidden">This computer</button><button data-engine="browser" class="hidden" disabled title="coming later">In your browser<span class="soon">later</span></button>
+      </span>
+    </div>
+    <p class="where"><span id="where-text"></span>
+      <a href="#" id="look-local" class="hidden">Running Coming Undone on this computer? Look for it.</a>
+      <a href="#" id="contact-open" aria-expanded="false" aria-controls="contact">Get in touch</a></p>
+    <div id="contact" class="hidden">
+      <p>Want it faster, or on your own songs at scale? I'd love to hear what you're making.</p>
+      <form id="contact-form" novalidate>
+        <div><label class="f" for="c-name">Name</label><input type="text" id="c-name" name="name" autocomplete="name"></div>
+        <div><label class="f" for="c-email">Email</label><input type="email" id="c-email" name="email" autocomplete="email" required></div>
+        <div><label class="f" for="c-making">What are you making?</label><textarea id="c-making" name="message"></textarea></div>
+        <input type="hidden" name="_subject" value="Coming Undone: new message">
+        <div class="trap" aria-hidden="true"><label>Leave this empty <input type="text" name="_gotcha" tabindex="-1" autocomplete="off"></label></div>
+        <div class="row" style="margin-top:2px"><button class="primary" type="submit" id="c-send">Send</button>
+          <span class="hint" id="c-status" role="status"></span></div>
+      </form>
+      <p id="c-thanks" class="hidden">Thank you, I'll write back soon.</p>
+    </div>
     <div id="drop" tabindex="0" role="button" aria-label="Choose an audio file">
       <div class="drop-main">Drop an audio file, or click to choose</div>
       <div class="drop-sub">mp3, wav, m4a, flac</div>
@@ -214,10 +262,22 @@
         <div class="hint" id="meter-hint"></div></div>
       <input type="hidden" id="meter" value="4/4">
 
+      <span class="label">Grid</span>
+      <div>
+        <div class="chips"><label class="chip"><input type="checkbox" id="snap"><span>snap notes to the grid</span></label></div>
+        <div class="nums">
+          <label class="num">bar one on beat <input type="number" id="downbeat" placeholder="auto" step="1" min="1" max="4">
+            <span class="mut">empty: guessed</span></label>
+        </div>
+      </div>
+
       <span class="label">Section</span>
-      <div class="nums" style="margin:0">
-        <label class="num">from <input type="number" id="start" placeholder="0" step="0.1" min="0"> s</label>
-        <label class="num">for <input type="number" id="duration" placeholder="all" step="0.1" min="0"> s</label>
+      <div>
+        <div class="nums" style="margin:0">
+          <label class="num">from <input type="number" id="start" placeholder="0" step="0.1" min="0"> s</label>
+          <label class="num">for <input type="number" id="duration" placeholder="all" step="0.1" min="0"> s</label>
+        </div>
+        <div class="hint" id="section-hint"></div>
       </div>
 
       <span class="label link-only hidden">Link audio</span>
@@ -242,8 +302,9 @@
 
   <!-- error -->
   <div class="panel hidden" id="err-panel">
-    <h2>Failed</h2>
+    <h2 id="err-title">Failed</h2>
     <div class="err-box" id="err"></div>
+    <div class="err-actions" id="err-actions"></div>
   </div>
 
   <!-- results -->
@@ -308,31 +369,113 @@
   </div>
 </div>
 
-<script>
-const $ = id => document.getElementById(id);
-const STEM_ORDER = ["vocals", "drums", "bass", "other"];
-const TRACK_COLOR = { melody: "var(--melody)", bass: "var(--bass)", comping: "var(--comping)" };
-let file = null, jobId = null;
+<script type="module">
+import { EngineError, findLocal, localEngine, onlineEngine } from "/js/engines.js";
 
-// ---- config: version and the transcribers this install has
+// ---- config: every outside address the page uses, in one place
+const params = new URLSearchParams(location.search);
+const CONFIG = {
+  // the Hugging Face Space behind "Online"; ?space=<id or URL> overrides it (a local Gradio)
+  space: params.get("space") || "swwallowws/coming-undone",
+  // where "This computer" looks for the local server (stemscribe-web)
+  localBases: ["http://localhost:8002"],
+  // the longest section one online run takes: space/split.py MAX_SECONDS
+  onlineMaxSeconds: 30,
+  // the contact form's endpoint (Formspree)
+  contactEndpoint: "https://formspree.io/f/mrpbjkak",
+  // Gradio's JavaScript client, vendored (vendor/gradio-client/VERSION)
+  gradioClient: "/vendor/gradio-client/browser.js",
+  // "In your browser" in the switch, marked as coming later; false hides it
+  showBrowserEngine: true,
+};
+
+const $ = id => document.getElementById(id);
+const STEM_ORDER = ["vocals", "drums", "bass", "other", "guitar", "piano"];
+const TRACK_COLOR = { melody: "var(--melody)", bass: "var(--bass)", comping: "var(--comping)" };
+let file = null;
+
+// ---- engines: where the run happens
+const ONLINE_BACKENDS = [{ name: "muscriptor", noncommercial: true }, { name: "basic-pitch", noncommercial: false }];
+const engines = { online: onlineEngine(CONFIG.space, () => import(CONFIG.gradioClient)), local: null };
+let engine = "online", localBackends = null;
+const WHERE = {
+  online: `Runs online, on a free GPU at Hugging Face. Your file goes there for the run and is deleted within the hour. ` +
+          `Up to ${CONFIG.onlineMaxSeconds} s a run, and everyone gets a few minutes a day.`,
+  local: () => `Runs on this computer, through Coming Undone at ${engines.local.base ? engines.local.base.replace(/^https?:\/\//, "") : location.host}. ` +
+              `Nothing leaves your machine: whole songs, full quality.`,
+};
+const remember = v => { try { localStorage.setItem("cu-engine", v); } catch (_) {} };
+const remembered = () => { try { return localStorage.getItem("cu-engine"); } catch (_) { return null; } };
+
+function selectEngine(id) {
+  if (id === "local" && !engines.local) id = "online";
+  engine = id;
+  document.querySelectorAll("#engine-choice button").forEach(b => b.classList.toggle("on", b.dataset.engine === id));
+  $("where-text").textContent = id === "local" ? WHERE.local() : WHERE.online;
+  setBackends(id === "local" ? localBackends : ONLINE_BACKENDS);
+  // links are fetched by the local server; online runs take files
+  const online = id === "online";
+  if (online && $("url").value.trim()) { $("url").value = ""; showLinkOnly(false); }
+  if (!file) { $("or").classList.toggle("hidden", online); $("url").classList.toggle("hidden", online); }
+  $("section-hint").textContent = online
+    ? `Online takes up to ${CONFIG.onlineMaxSeconds} s: the section you pick, or the first ${CONFIG.onlineMaxSeconds} s.` : "";
+  refresh();
+}
+document.querySelectorAll("#engine-choice button").forEach(b => b.onclick = () => {
+  if (b.disabled) return;
+  selectEngine(b.dataset.engine); remember(b.dataset.engine);
+});
+$("engine-choice").querySelector('[data-engine="browser"]').classList.toggle("hidden", !CONFIG.showBrowserEngine);
+
+function useLocal(found, prefer) {
+  engines.local = localEngine(found.base);
+  localBackends = found.config.backends;
+  $("ver").textContent = "v" + found.config.version;
+  $("engine-choice").querySelector('[data-engine="local"]').classList.remove("hidden");
+  $("look-local").classList.add("hidden");
+  selectEngine(prefer || remembered() === "local" ? "local" : engine);
+}
+
+// Chrome asks before a public page may reach localhost. Only look on our own when that
+// is already allowed (or it is not a question here); otherwise wait for a click.
+async function localAccess() {
+  if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) return "granted";
+  for (const name of ["local-network-access", "loopback-network"]) {
+    try { return (await navigator.permissions.query({ name })).state; } catch (_) { /* unknown name */ }
+  }
+  return "granted";                        // browsers without the question just connect
+}
+async function lookForLocal(asked) {
+  const here = await findLocal([""], 1500);      // this page served by the local server itself
+  if (here) return useLocal(here, true);
+  if (!asked) {
+    const state = await localAccess();
+    if (state === "prompt") { $("look-local").classList.remove("hidden"); return; }
+    if (state === "denied") return;
+  }
+  const found = await findLocal(CONFIG.localBases);
+  if (found) return useLocal(found, asked);
+  if (asked) $("look-local").textContent = "Not found on localhost:8002. Start it with stemscribe-web, then look again.";
+}
+$("look-local").onclick = e => { e.preventDefault(); lookForLocal(true); };
+
+// ---- the transcribers the chosen engine has
 const MODEL_HINT = {
   htdemucs: 'drums, bass, vocals, other: guitars land in "other"',
   htdemucs_6s: "adds guitar and piano; slower, and two guitars stay together",
 };
-fetch("/api/config").then(r => r.json()).then(c => {
-  $("ver").textContent = "v" + c.version;
+function setBackends(list) {
   const box = $("backend-choice");
-  box.innerHTML = c.backends.map(b => `<button data-v="${esc(b.name)}">${esc(b.name)}</button>`).join("");
-  if (!c.backends.some(b => b.name === $("backend").value)) $("backend").value = c.backends[0].name;
-  const hint = () => {
-    const b = c.backends.find(x => x.name === $("backend").value);
+  box.innerHTML = list.map(b => `<button data-v="${esc(b.name)}">${esc(b.name)}</button>`).join("");
+  if (!list.some(b => b.name === $("backend").value)) $("backend").value = list[0].name;
+  choiceHooks.backend = () => {
+    const b = list.find(x => x.name === $("backend").value);
     $("backend-hint").textContent = b && b.noncommercial
-      ? "best quality; CC-BY-NC weights, so prototypes only" : "Apache-2.0, safe for commercial use";
+      ? "best quality; CC-BY-NC weights, so non-commercial use only" : "Apache-2.0, fast, safe for commercial use";
   };
-  choiceHooks.backend = hint;
   wireChoices();
-  hint();
-});
+  choiceHooks.backend();
+}
 
 // ---- joined option buttons: each writes its value into the hidden input it names
 // The tempo counts the meter's denominator note (grid.py): eighths in x/8. The MIDI's
@@ -349,6 +492,7 @@ const choiceHooks = {
     $("tempo-unit").textContent = bpmUnit(m);
     $("meter-hint").textContent = m.split(":")[0].endsWith("/8")
       ? "the tempo counts eighths; the MIDI file writes it in quarters (half the number)" : "";
+    $("downbeat").max = m.split(":")[0].split("/")[0];      // bar one: 1 to the numerator
   },
 };
 function wireChoices() {
@@ -511,7 +655,44 @@ function refresh() {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const numOr = (id, d) => $(id).value === "" ? d : parseFloat($(id).value);
 
-// ---- run
+// ---- run: the same options for every engine; each sends what its backend takes
+const numOrNull = (id, parse = parseFloat) => $(id).value === "" ? null : parse($(id).value);
+function collectOptions() {
+  const mono = [];
+  if ($("monobass").checked) mono.push("bass");
+  if ($("monovocals").checked) mono.push("vocals");
+  return {
+    audio_format: $("audiofmt").value,
+    backend: $("backend").value,
+    demucs_model: $("model").value,
+    include_vocals_melody: $("vocals").checked,
+    mono_stems: mono,
+    cleanup: $("cleanup").checked,
+    de_overlap: $("deoverlap").checked,
+    trim_silence: $("trim").checked,
+    strip_metadata: $("strip").checked,
+    max_duration_beats: numOr("maxbeats", 2),
+    velocity_floor: numOr("velfloor", 15),
+    legato: $("legato").checked,
+    legato_max_gap_beats: numOr("legatogap", 0.25),
+    tempo: numOrNull("tempo"),
+    meter: $("meter").value,
+    downbeat: numOrNull("downbeat", v => parseInt(v, 10)),
+    snap: $("snap").checked,
+    start: numOrNull("start"),
+    duration: numOrNull("duration"),
+  };
+}
+
+function logLine(d) {
+  const line = document.createElement("div");
+  line.innerHTML = `<span class="stage">${esc(d.stage)}</span><span>${esc(d.message)}</span>`;
+  $("log").querySelectorAll(".now").forEach(x => x.classList.remove("now"));
+  line.classList.add("now");
+  $("log").appendChild(line);
+  $("log").scrollTop = $("log").scrollHeight;
+}
+
 $("go").onclick = async () => {
   const url = $("url").value.trim();
   if (!file && !url) return;
@@ -521,79 +702,57 @@ $("go").onclick = async () => {
   $("prog-panel").classList.remove("hidden");
   $("spin").classList.remove("hidden");
   $("log").textContent = "";
-
-  const fd = new FormData();
-  if (file) fd.append("file", file);
-  else fd.append("url", url);
-  fd.append("audio_format", $("audiofmt").value);
-  fd.append("backend", $("backend").value);
-  fd.append("demucs_model", $("model").value);
-  fd.append("legato", $("legato").checked);
-  fd.append("legato_max_gap_beats", numOr("legatogap", 0.25));
-  const mono = [];
-  if ($("monobass").checked) mono.push("bass");
-  if ($("monovocals").checked) mono.push("vocals");
-  fd.append("mono_stems", mono.join(","));
-  fd.append("include_vocals_melody", $("vocals").checked);
-  fd.append("cleanup", $("cleanup").checked);
-  fd.append("de_overlap", $("deoverlap").checked);
-  fd.append("trim_silence", $("trim").checked);
-  fd.append("strip_metadata", $("strip").checked);
-  fd.append("max_duration_beats", numOr("maxbeats", 2));
-  fd.append("velocity_floor", numOr("velfloor", 15));
-  if ($("tempo").value !== "") fd.append("tempo", $("tempo").value);
-  fd.append("meter", $("meter").value);
-  if ($("start").value !== "") fd.append("start", $("start").value);
-  if ($("duration").value !== "") fd.append("duration", $("duration").value);
-
-  let r;
   try {
-    const resp = await fetch("/api/jobs", { method: "POST", body: fd });
-    r = await resp.json();
-    if (!resp.ok) return fail(r.detail || JSON.stringify(r));
-  } catch (e) { return fail("Could not reach the server: " + e); }
-  if (!r.id) return fail(JSON.stringify(r));
-  jobId = r.id;
-  listen(jobId);
+    const run = await engines[engine].run({ file, url }, collectOptions(), logLine);
+    render(run);
+    $("spin").classList.add("hidden");
+    $("again").classList.remove("hidden");
+    $("results").classList.remove("hidden");
+  } catch (e) {
+    fail(e);
+  }
 };
 
-function listen(id) {
-  const es = new EventSource(`/api/jobs/${id}/events`);
-  es.onmessage = e => {
-    const d = JSON.parse(e.data);
-    if (d.stage === "done") { es.close(); finish(id); return; }
-    if (d.stage === "error") { es.close(); fail(d.message); return; }
-    const line = document.createElement("div");
-    line.innerHTML = `<span class="stage">${esc(d.stage)}</span><span>${esc(d.message)}</span>`;
-    $("log").querySelectorAll(".now").forEach(x => x.classList.remove("now"));
-    line.classList.add("now");
-    $("log").appendChild(line);
-    $("log").scrollTop = $("log").scrollHeight;
-  };
-  es.onerror = () => es.close();
-}
-
-function fail(msg) {
+// A failure says what happened and what to do next. Running out of online time is the
+// expected one: it points at the engines that do not use it.
+function fail(e) {
   $("spin").classList.add("hidden");
   $("err-panel").classList.remove("hidden");
-  $("err").textContent = msg;
   $("go").disabled = false;
   $("again").classList.remove("hidden");
-}
-
-async function finish(id) {
-  const j = await (await fetch(`/api/jobs/${id}`)).json();
-  if (j.status !== "done") return fail(j.error || "job did not finish");
-  render(id, j.result);
-  $("spin").classList.add("hidden");
-  $("again").classList.remove("hidden");
-  $("results").classList.remove("hidden");
+  const acts = $("err-actions"); acts.innerHTML = "";
+  const kind = e instanceof EngineError ? e.kind : "failed";
+  $("err").classList.toggle("gentle", kind === "quota" || kind === "unreachable" || kind === "input");
+  if (kind === "quota") {
+    $("err-title").textContent = "Out of online time for today";
+    $("err").textContent =
+      "Today's free GPU time at Hugging Face is used up for you" + (e.detail ? ` (it comes back in ${e.detail})` : "") + ". " +
+      (engines.local ? "You can run it on this computer instead, with no limit. " :
+        "Coming Undone also runs on your own computer, with no limit: start stemscribe-web there and this page finds it. ") +
+      (CONFIG.showBrowserEngine ? "Running it right in your browser is coming later." : "");
+    if (engines.local) {
+      const b = document.createElement("button");
+      b.className = "primary"; b.textContent = "Run on this computer";
+      b.onclick = () => { selectEngine("local"); remember("local"); $("go").click(); };
+      acts.appendChild(b);
+    } else {
+      const b = document.createElement("button");
+      b.textContent = "Look for it on this computer";
+      b.onclick = () => lookForLocal(true).then(() => { if (engines.local) { selectEngine("local"); $("err-panel").classList.add("hidden"); } });
+      acts.appendChild(b);
+    }
+    return;
+  }
+  $("err-title").textContent = kind === "unreachable" ? "Not reachable" : kind === "input" ? "One thing first" : "Failed";
+  $("err").textContent = (e && e.message) || String(e);
+  if (e && e.detail && kind !== "input") $("err").textContent += `\n${e.detail}`;
 }
 
 $("again").onclick = () => location.reload();
 
-function render(id, res) {
-  const url = p => `/api/jobs/${id}/files/${p}`;
+function render(run) {
+  const res = run.res;
+  const url = p => run.fileUrl(p);
 
   // source (only for fetched audio)
   const s = res.source;
@@ -625,19 +784,19 @@ function render(id, res) {
     const info = () => {
       $("bar-info").textContent = `Bars start at ${g.first_bar.toFixed(2)}s (grid from ${g.source_track}` +
         `${g.snapped ? ", notes snapped" : ""}). Bar "one" is a guess` +
-        (g.bar_one_confidence < 0.2 ? " with low confidence: check it." : ".");
+        (g.bar_one_confidence < 0.2 ? " with low confidence: check it." : ".") +
+        (run.shiftBar ? "" : ` To move it, set "bar one on beat" above and run again.`);
     };
     info();
     const move = async (beats) => {
-      const fd = new FormData(); fd.append("beats", beats);
-      const r = await fetch(`/api/jobs/${id}/bar`, { method: "POST", body: fd });
-      if (r.ok) { g.first_bar = (await r.json()).first_bar; info(); }
+      try { g.first_bar = (await run.shiftBar(beats)).first_bar; info(); } catch (_) { /* keeps the old one */ }
     };
     $("bar-earlier").onclick = () => move(-1);
     $("bar-later").onclick = () => move(1);
+    $("bar-box").querySelector(".alt-btns").classList.toggle("hidden", !run.shiftBar);
   }
 
-  const alts = (t.candidates || []).filter(c => c.ratio !== 1);
+  const alts = run.restamp ? (t.candidates || []).filter(c => c.ratio !== 1) : [];
   if (alts.length) {
     $("alts").classList.remove("hidden");
     const box = $("alt-btns"); box.innerHTML = "";
@@ -646,8 +805,7 @@ function render(id, res) {
       b.className = "alt" + (c.ratio === 1 ? " active" : "");
       b.textContent = `${c.bpm.toFixed(2)}${c.ratio === 0.5 ? "  ½×" : c.ratio === 2 ? "  2×" : c.ratio === 1 ? "" : `  ${c.ratio.toFixed(2)}×`}`;
       b.onclick = async () => {
-        const fd = new FormData(); fd.append("bpm", c.bpm);
-        await fetch(`/api/jobs/${id}/tempo`, { method: "POST", body: fd });
+        await run.restamp(c.bpm);
         $("bpm").textContent = c.bpm.toFixed(2);
         $("tempo-src").textContent = "you set this";
         [...box.children].forEach(x => x.classList.remove("active"));
@@ -703,8 +861,8 @@ function render(id, res) {
   audio.onpause = () => { $("pl-play").textContent = "Play"; };
   // a section's MIDI keeps the original file's timeline, its audio starts at 0: the roll starts at the section
   rollStart = (res.prepared || {}).offset || 0;
-  fetch(`/api/jobs/${id}/roll`).then(r => r.json()).then(r => { roll = r; drawLegend(); drawRoll(); followAudio(); });
-  fetch(`/api/jobs/${id}/parts`).then(r => r.json()).then(r => { parts = r; buildParts(id); });
+  roll = run.roll; drawLegend(); drawRoll(); followAudio();
+  parts = run.parts; buildParts(run);
 
   // downloads
   const dl = $("dl"); dl.innerHTML = "";
@@ -776,7 +934,7 @@ const PART_ORDER = ["melody", "comping", "bass", "drums"];
 const partRank = p => p.drum ? 99 : (PART_ORDER.indexOf(p.name) + 1 || PART_ORDER.indexOf("bass"));
 const partsView = () => $("view").value === "parts";
 
-function buildParts(id) {
+function buildParts(run) {
   const box = $("parts");
   box.querySelectorAll(".part-name, .part-roll").forEach(e => e.remove());
   parts.parts.sort((a, b) => partRank(a) - partRank(b));
@@ -784,7 +942,7 @@ function buildParts(id) {
     const name = document.createElement("div");
     name.className = "part-name";
     const n = p.notes.length;
-    name.innerHTML = `<a class="filename" download href="/api/jobs/${id}/parts/${encodeURIComponent(p.name)}.mid">${esc(p.file)}</a>` +
+    name.innerHTML = `<a class="filename" download href="${esc(run.partUrl(p.name) || "#")}">${esc(p.file)}</a>` +
       `<span class="mono mut">${n} ${p.drum ? (n === 1 ? "hit" : "hits") : (n === 1 ? "note" : "notes")}</span>`;
     const cv = document.createElement("canvas");
     cv.className = "part-roll";
@@ -869,6 +1027,42 @@ addEventListener("resize", drawRoll);
 addEventListener("resize", drawParts);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawRoll);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawParts);
+
+// ---- get in touch: a small form, sent to CONFIG.contactEndpoint (Formspree)
+$("contact-open").onclick = e => {
+  e.preventDefault();
+  const open = $("contact").classList.toggle("hidden") === false;
+  $("contact-open").setAttribute("aria-expanded", String(open));
+  if (open) $("c-name").focus();
+};
+$("contact-form").onsubmit = async e => {
+  e.preventDefault();
+  const form = $("contact-form");
+  if (!$("c-email").checkValidity()) {
+    $("c-status").textContent = "An email address, please, so I can write back.";
+    $("c-email").focus();
+    return;
+  }
+  $("c-send").disabled = true;
+  $("c-status").textContent = "sending...";
+  try {
+    const r = await fetch(CONFIG.contactEndpoint, {
+      method: "POST", body: new FormData(form), headers: { Accept: "application/json" },
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    form.classList.add("hidden");
+    $("c-thanks").classList.remove("hidden");
+  } catch (_) {
+    $("c-status").textContent = "That did not go through. Nothing is lost: press Send to try again.";
+    $("c-send").textContent = "Send again";
+  } finally {
+    $("c-send").disabled = false;
+  }
+};
+
+// ---- start: Online by default; This computer joins when it answers
+selectEngine("online");
+lookForLocal(false);
 </script>
 </body>
 </html>

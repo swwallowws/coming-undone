@@ -1,0 +1,23 @@
+# Coming Undone Space (ZeroGPU, Python 3.10). Gradio and spaces come from the Space
+# itself (sdk_version in README.md). torch 2.8.0 is on ZeroGPU's supported list and is
+# the version this repo is tested with; torchaudio matches it, and torchcodec stays out
+# (it breaks demucs's save path, see the repo README's Known gotchas).
+torch==2.8.0
+torchaudio==2.8.0
+# tflite-runtime (basic-pitch's runtime on Python 3.10 Linux) is built against numpy 1.x
+numpy>=1.24,<2
+# separation: demucs code MIT, pretrained weights research only
+demucs==4.1.0
+# transcription: basic-pitch Apache-2.0 (Python 3.10 on Linux runs it on tflite-runtime)
+basic-pitch==0.4.0
+# transcription: MuScriptor code MIT, weights CC-BY-NC 4.0 (gated; needs HF_TOKEN)
+muscriptor==0.3.0
+# drums: ADT_STR, code and weights CC BY-SA 4.0, fetched at a pinned revision
+huggingface_hub>=0.20
+transformers>=4.40
+omegaconf>=2.3
+safetensors>=0.4
+# the rest of stemscribe
+soundfile>=0.12
+pretty_midi>=0.2
+librosa>=0.10

@@ -3,6 +3,10 @@
 Deliberately local-only: it runs demucs on your machine, reads and writes your
 files, and has no auth. Bind it to localhost and keep it there.
 
+The public page can use it too, as its "This computer" engine: the page runs in your
+browser, on your machine, and calls http://localhost:8002. CORS lets in only that
+page's origin (PUBLIC_ORIGINS, --allow-origin) and pages served from localhost.
+
 Design note -- the tempo question: the whole point is that you should not have to
 think about tempo. A run detects it and proceeds. The alternates only surface
 *after* the fact, and applying one is instant (see /tempo below), so the fast
@@ -12,6 +16,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import shutil
 import tempfile
 import threading
@@ -34,7 +39,61 @@ from ..prepare import PrepareParams
 
 STATIC = pathlib.Path(__file__).parent / "static"
 
+#: The port the public page looks for ("This computer" in its Runs: switch).
+DEFAULT_PORT = 8002
+#: Where the public page is served from: it may call this server from the visitor's own
+#: browser. Placeholder until the site's address is settled; add more with --allow-origin.
+PUBLIC_ORIGINS: list[str] = ["https://swwallowws.github.io"]
+#: Any page served from this machine, on any port (the Space's local Gradio, a static
+#: preview of the public page, this server itself).
+LOCAL_ORIGINS = r"https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?"
+
+def origin_allowed(origin: str | None) -> bool:
+    return bool(origin) and (origin in PUBLIC_ORIGINS or re.fullmatch(LOCAL_ORIGINS, origin) is not None)
+
+
+class LocalCORS:
+    """CORS for the public page and local origins, plain ASGI so the SSE stream passes
+    through untouched. Also answers Chrome's Private Network Access preflight: a public
+    https page calling http://localhost must be told this server agrees to it."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
+        origin = headers.get("origin")
+        ok = origin_allowed(origin)
+        if scope["method"] == "OPTIONS" and "access-control-request-method" in headers:
+            out = [(b"vary", b"Origin")]
+            if ok:
+                out += [(b"access-control-allow-origin", origin.encode()),
+                        (b"access-control-allow-methods", b"GET, POST, OPTIONS"),
+                        (b"access-control-allow-headers",
+                         headers.get("access-control-request-headers", "content-type").encode()),
+                        (b"access-control-max-age", b"600")]
+                if headers.get("access-control-request-private-network") == "true":
+                    out.append((b"access-control-allow-private-network", b"true"))
+            await send({"type": "http.response.start", "status": 204 if ok else 403, "headers": out})
+            await send({"type": "http.response.body", "body": b""})
+            return
+
+        async def send_with_cors(message):
+            if ok and message["type"] == "http.response.start":
+                message = {**message, "headers": [*message.get("headers", []),
+                                                  (b"access-control-allow-origin", origin.encode()),
+                                                  (b"vary", b"Origin")]}
+            await send(message)
+
+        await self.app(scope, receive, send_with_cors)
+
+
 app = FastAPI(title="Coming Undone", version=__version__)
+app.add_middleware(LocalCORS)
+# the page's engine layer (engines.js), next to the page
+app.mount("/js", StaticFiles(directory=STATIC / "js"), name="js")
 # the shared design system (tokens, fonts), copied in by design/sync.sh
 app.mount("/vendor", StaticFiles(directory=STATIC / "vendor"), name="vendor")
 # the tab icon, copied in by the showcase's `npm run favicons -- --copy`
@@ -98,6 +157,8 @@ def _run(job: Job, audio: pathlib.Path, opts: dict) -> None:
             ),
             tempo=opts["tempo"],
             meter=opts["meter"],
+            downbeat=opts["downbeat"],
+            snap=opts["snap"],
             keep_stems=True,
             instrumental=True,
             progress=job.emit,
@@ -183,6 +244,8 @@ async def create_job(
     duration: float | None = Form(None),
     tempo: float | None = Form(None),
     meter: str = Form("4/4"),
+    downbeat: int | None = Form(None),
+    snap: bool = Form(False),
 ) -> dict:
     if backend not in BACKENDS:
         raise HTTPException(400, f"unknown backend {backend!r}")
@@ -190,6 +253,8 @@ async def create_job(
         bar = _grid.Meter.parse(meter)
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
+    if downbeat is not None and not 1 <= downbeat <= bar.pulses:
+        raise HTTPException(400, f"downbeat must be 1 to {bar.pulses}")
 
     url = (url or "").strip()
     has_file = file is not None and file.filename
@@ -235,6 +300,8 @@ async def create_job(
         duration=duration,
         tempo=tempo,  # None -> detected; the UI's default
         meter=bar,
+        downbeat=downbeat,
+        snap=snap,
     )
     threading.Thread(target=_run, args=(job, audio, opts), daemon=True).start()
     return {"id": jid, "name": safe}
@@ -426,9 +493,14 @@ def main(argv: list[str] | None = None) -> int:
 
     p = argparse.ArgumentParser(prog="stemscribe-web", description="Coming Undone local web UI")
     p.add_argument("--host", default="127.0.0.1", help="default: localhost only")
-    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--port", type=int, default=DEFAULT_PORT,
+                   help=f"default: {DEFAULT_PORT}, where the public page looks for this computer")
     p.add_argument("--jobs-dir", default=None, help=f"default: {JOBS_ROOT}")
+    p.add_argument("--allow-origin", action="append", default=[], metavar="URL",
+                   help="another site whose page may use this server (repeatable); "
+                        f"always allowed: {', '.join(PUBLIC_ORIGINS)} and localhost")
     args = p.parse_args(argv)
+    PUBLIC_ORIGINS.extend(o.rstrip("/") for o in args.allow_origin)
 
     if args.jobs_dir:
         JOBS_ROOT = pathlib.Path(args.jobs_dir).expanduser()
