@@ -138,6 +138,41 @@ export function mapOnline(data) {
   };
 }
 
+// ---- Online: what a run asks of the visitor's daily ZeroGPU time --------------------
+// A mirror of space/split.py's GPU budget (gpu_seconds, runs_per_day); the numbers and
+// where they come from are documented there, and tests/test_space.py checks both agree.
+export const ONLINE_BUDGET = {
+  maxSeconds: 30,
+  base: 8,
+  separatePerS: { htdemucs: 0.2, htdemucs_6s: 0.35 },
+  gpuBackends: ["muscriptor"],
+  pitched: { htdemucs: ["vocals", "bass", "other"], htdemucs_6s: ["vocals", "bass", "guitar", "piano", "other"] },
+  stem: [6, 0.3],
+  drums: [4, 0.15],
+  max: 120,
+  quotaCost: 1.5,
+  quota: { signedOut: 120, freeAccount: 300 },
+};
+
+// seconds of GPU one run asks for: seconds of audio, the page's options
+export function onlineGpuSeconds(seconds, opts = {}, B = ONLINE_BUDGET) {
+  const s = Math.max(0, Math.min(Number(seconds) || 0, B.maxSeconds));
+  const model = B.separatePerS[opts.demucs_model] !== undefined ? opts.demucs_model : "htdemucs";
+  let work = B.base + B.separatePerS[model] * s;
+  if (B.gpuBackends.includes(opts.backend || "muscriptor")) {
+    const n = B.pitched[model].filter(x => opts.include_vocals_melody !== false || x !== "vocals").length;
+    work += n * (B.stem[0] + B.stem[1] * s);
+  }
+  work += B.drums[0] + B.drums[1] * s;
+  return Math.min(B.max, Math.ceil(work));     // the same sum, in the same order, as Python
+}
+
+// how many runs of `request` seconds a day's quota holds
+export function onlineRunsPerDay(request, quota, B = ONLINE_BUDGET) {
+  if (request > quota) return 0;
+  return Math.floor((quota - request) / (request * B.quotaCost)) + 1;
+}
+
 export function onlineOptions(opts) {
   const out = { ...opts, stems_audio: true };
   delete out.audio_format;               // links are a local-only feature
@@ -177,7 +212,10 @@ export function onlineEngine(space, loadClient) {
         if (msg.stage === "error") throw classifyOnlineError(msg.message);
         if (msg.stage === "pending" && msg.position > 0) say("queue", `waiting in line: ${msg.position} ahead`);
         const p = (msg.progress_data || []).find(x => x && x.desc);
-        if (p) say("gpu", p.desc === "waiting for a GPU" ? "separating and transcribing on a GPU" : p.desc);
+        if (p) {
+        const gpu = p.desc === "waiting for a GPU";
+        say(gpu ? "gpu" : "online", gpu ? "separating and transcribing on a GPU" : p.desc);
+      }
         if (msg.stage === "complete") break;
       }
       if (!data) throw new EngineError("failed", "The online run returned nothing.");

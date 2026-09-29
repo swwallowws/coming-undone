@@ -65,10 +65,205 @@ def test_downbeat_and_meter_pass_through():
     assert opts["downbeat"] == 3 and opts["snap"] is True
 
 
-def test_gpu_seconds_stays_inside_zerogpu_bounds_and_grows_with_work():
-    fast = split.gpu_seconds(split.parse_options({"backend": "basic-pitch", "duration": 5}))
-    slow = split.gpu_seconds(split.parse_options({"demucs_model": "htdemucs_6s"}))
-    assert 30 <= fast <= slow <= 120
+def test_gpu_seconds_follow_the_clip_and_the_work():
+    # the first real run: 20 s, 4 stems, muscriptor on 3 stems + drums took 29.8 s of
+    # GPU work (separate 1.6 + transcribe 28.2); the request keeps a margin over it
+    assert split.gpu_seconds(20) == 55 and split.gpu_seconds(20) > 29.8 * 1.5
+    assert split.gpu_seconds(30) == 68 < 93                   # the old flat request
+    assert split.gpu_seconds(5) < split.gpu_seconds(20) < split.gpu_seconds(30)
+    assert split.gpu_seconds(600) == split.gpu_seconds(30)    # never past the section cap
+    assert split.gpu_seconds(30, backend="basic-pitch") < 30  # basic-pitch stays on the CPU
+    assert split.gpu_seconds(30, include_vocals_melody=False) < split.gpu_seconds(30)
+    assert split.gpu_seconds(30, "htdemucs_6s") <= split.GPU_MAX
+
+
+def test_runs_per_day_count_what_zerogpu_charges():
+    # a run starts while the quota left covers the request, and costs 1.5 times it:
+    # the first run asked 93 s and used up a signed-out 120 s
+    assert split.runs_per_day(93, 120) == 1
+    assert split.runs_per_day(68, split.QUOTA_SIGNED_OUT) == 1
+    assert split.runs_per_day(68, split.QUOTA_FREE_ACCOUNT) == 3
+    assert split.runs_per_day(43, split.QUOTA_SIGNED_OUT) == 2   # a 10 s section
+    assert split.runs_per_day(130, 120) == 0
+
+
+def test_the_page_computes_the_same_budget_as_the_space():
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    cases = [(s, m, b, v) for s in (0, 3.3, 10, 17.5, 20, 30, 45)
+             for m in ("htdemucs", "htdemucs_6s") for b in ("muscriptor", "basic-pitch")
+             for v in (True, False)]
+    engines = ROOT / "src" / "stemscribe" / "web" / "static" / "js" / "engines.js"
+    script = (f"const E = await import({json.dumps(engines.as_uri())});\n"
+              f"const cases = {json.dumps(cases)};\n"
+              "console.log(JSON.stringify(cases.map(([s, m, b, v]) => {\n"
+              "  const r = E.onlineGpuSeconds(s, { demucs_model: m, backend: b, include_vocals_melody: v });\n"
+              "  return [r, E.onlineRunsPerDay(r, 120), E.onlineRunsPerDay(r, 300)];\n"
+              "})));\n")
+    p = subprocess.run([node, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    want = []
+    for s, m, b, v in cases:
+        r = split.gpu_seconds(s, m, b, v, True)
+        want.append([r, split.runs_per_day(r, split.QUOTA_SIGNED_OUT),
+                     split.runs_per_day(r, split.QUOTA_FREE_ACCOUNT)])
+    assert json.loads(p.stdout) == want
+
+
+@pytest.mark.parametrize("backend", ["muscriptor", "basic-pitch"])
+def test_only_separation_and_transcription_run_on_the_gpu(tmp_path, monkeypatch, backend):
+    """The real pipeline with the models faked: the GPU hook gets one plain-data job
+    (it crosses into a ZeroGPU worker process by pickle), and prepare, tempo, the grid
+    and the part files run outside it."""
+    import pickle
+
+    import numpy as np
+    import soundfile as sf
+
+    from stemscribe import backends, core
+    from stemscribe import grid as grid_mod
+    from stemscribe import prepare as prep_mod
+    from stemscribe import tempo as tempo_mod
+
+    sr, secs = 8000, 12.0
+
+    def wav(p):
+        y = (np.random.default_rng(0).standard_normal(int(sr * secs)) * 0.1).astype(np.float32)
+        sf.write(str(p), y, sr)
+        return p
+
+    where: list[tuple[str, bool]] = []
+    inside = {"on": False}
+
+    def note(name):
+        where.append((name, inside["on"]))
+
+    def separate(audio, out, model_name=None, device=None):
+        note("separate")
+        out.mkdir(parents=True, exist_ok=True)
+        return {s: wav(out / f"{s}.wav") for s in ("drums", "bass", "other", "vocals")}
+
+    def transcriber(name, drum=False):
+        def fn(stem_wav, out_mid, **_):
+            note(name)
+            pm = pretty_midi.PrettyMIDI()
+            inst = pretty_midi.Instrument(0, is_drum=drum)
+            inst.notes = [pretty_midi.Note(90, 36 if drum else 60, 0.5 * i, 0.5 * i + 0.2)
+                          for i in range(20)]
+            pm.instruments.append(inst)
+            pm.write(str(out_mid))
+            return out_mid
+        return fn
+
+    def spy(mod, attr):
+        real = getattr(mod, attr)
+
+        def wrapped(*a, **k):
+            note(attr)
+            return real(*a, **k)
+        monkeypatch.setattr(mod, attr, wrapped)
+
+    monkeypatch.setattr("stemscribe.separate.separate", separate)
+    monkeypatch.setitem(backends.BACKENDS, "muscriptor", transcriber("muscriptor"))
+    monkeypatch.setitem(backends.BACKENDS, "basic-pitch", transcriber("basic-pitch"))
+    monkeypatch.setitem(backends.DRUM_BACKENDS, "adt-str", transcriber("adt-str", drum=True))
+    monkeypatch.setattr(backends, "drums_available", lambda: True)
+    for mod, attr in ((prep_mod, "prepare_audio"), (tempo_mod, "resolve_tempo"), (grid_mod, "apply")):
+        spy(mod, attr)
+    spy(split, "_parts")
+
+    jobs = []
+
+    def gpu(job):
+        jobs.append(job)
+        job = pickle.loads(pickle.dumps(job))          # what ZeroGPU does with it
+        inside["on"] = True
+        try:
+            out = core.gpu_stage(job)
+        finally:
+            inside["on"] = False
+        return pickle.loads(pickle.dumps(out))
+
+    opts = split.parse_options({"stems_audio": False, "trim_silence": False, "backend": backend})
+    out = split.run(wav(tmp_path / "in.wav"), opts, tmp_path / "work", gpu=gpu)
+
+    assert len(jobs) == 1
+    on_gpu = {n for n, i in where if i}
+    off_gpu = {n for n, i in where if not i}
+    if backend == "muscriptor":
+        assert on_gpu == {"separate", "muscriptor", "adt-str"}
+    else:                                   # basic-pitch runs on the CPU anyway
+        assert on_gpu == {"separate", "adt-str"} and "basic-pitch" in off_gpu
+    assert {"prepare_audio", "resolve_tempo", "apply", "_parts"} <= off_gpu
+    assert not off_gpu & on_gpu
+    res = out["result"]
+    assert {p["name"] for p in res["parts"]["parts"]} == {"melody", "bass", "comping", "drums"}
+    assert res["gpu"] == split.gpu_estimate(secs, opts)
+    assert res["gpu"]["request"] == split.gpu_seconds(secs, backend=backend)
+    assert res["gpu"]["seconds"] == secs
+    assert "gpu_call" in res["timings"]
+
+
+def test_the_space_decorates_only_the_gpu_stage(tmp_path, monkeypatch):
+    """app.py with spaces and gradio stubbed: the one @spaces.GPU function is the GPU
+    stage, its duration comes from the job, and the endpoint runs the rest outside."""
+    import types
+
+    gpu_calls = []
+
+    def GPU(duration=None, **_):
+        def deco(fn):
+            def wrapped(job):
+                gpu_calls.append(duration(job))
+                return fn(job)
+            wrapped.duration = duration
+            return wrapped
+        return deco
+
+    class Anything:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def __getattr__(self, name): return lambda *a, **k: None
+
+    class GrError(Exception):
+        pass
+
+    progress_seen = []
+    gr = types.ModuleType("gradio")
+    gr.Error = GrError
+    gr.Progress = lambda: (lambda value=None, desc=None: progress_seen.append(desc))
+    for name in ("Blocks", "Markdown", "Row", "Column", "File", "Textbox", "Button"):
+        setattr(gr, name, Anything)
+    monkeypatch.setitem(sys.modules, "gradio", gr)
+    monkeypatch.setitem(sys.modules, "spaces", types.SimpleNamespace(GPU=GPU))
+    monkeypatch.setenv("COMING_UNDONE_PRELOAD", "0")
+    monkeypatch.delitem(sys.modules, "app", raising=False)
+    import app
+
+    assert app._gpu_stage.duration is app._gpu_seconds
+    seen = {}
+
+    def fake_run(audio, opts, work, progress=None, gpu=None):
+        seen["gpu"] = gpu
+        return {"result": {}, "midi": pathlib.Path("a.mid"), "parts": [], "files": []}
+    monkeypatch.setattr(app.split, "run", fake_run)
+    monkeypatch.setattr(app, "WORK_ROOT", tmp_path)
+    app.split_api(str(tmp_path / "in.wav"), "{}", progress=gr.Progress())
+    assert seen["gpu"] is not None and seen["gpu"] is not app._gpu_stage   # wrapped with a progress note
+
+    job = {"audio": str(tmp_path / "x.wav"), "demucs_model": "htdemucs", "backend": "muscriptor",
+           "include_vocals_melody": True, "drums": "adt-str"}
+    import numpy as np
+    import soundfile as sf
+    sf.write(job["audio"], np.zeros(8000 * 20, dtype=np.float32), 8000)
+    monkeypatch.setattr(app._core, "gpu_stage", lambda j: {"timings": {}})
+    seen["gpu"](job)
+    assert gpu_calls == [split.gpu_seconds(20, drums=split._backends.drums_available())]
+    assert "waiting for a GPU" in progress_seen
 
 
 def _fake_process(calls):

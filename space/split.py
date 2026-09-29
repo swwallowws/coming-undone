@@ -10,16 +10,20 @@ typo on the page fails loudly instead of being ignored.
 from __future__ import annotations
 
 import json
+import math
 import pathlib
 import shutil
 import subprocess
 from typing import Callable
 
 import pretty_midi
+import soundfile as sf
 
+from stemscribe import backends as _backends
 from stemscribe import grid as _grid
 from stemscribe.cleanup import CleanupParams
 from stemscribe.core import _jsonable, process
+from stemscribe.core import gpu_stage as _gpu_stage
 from stemscribe.prepare import PrepareParams
 
 #: The longest stretch of audio one online run takes, in seconds. Visitors get 2
@@ -120,20 +124,78 @@ def parse_options(raw: str | dict | None) -> dict:
     return opts
 
 
-def gpu_seconds(opts: dict) -> int:
-    """How long to ask ZeroGPU for, from the section length and the work it needs.
+# ---- the GPU budget ------------------------------------------------------------------
+# Only core.gpu_stage runs on the GPU: demucs, then MuScriptor on each pitched stem and
+# ADT_STR on the drums. The request is sized to the prepared audio (after the section
+# cut and the silence trim), measured before asking.
+#
+# Measured on the Space (2026-09-29, a 20 s clip, htdemucs + muscriptor: 3 pitched
+# stems and the drums): separate 1.6 s, transcribe 28.2 s. Each MuScriptor stem is a
+# fresh `muscriptor` process that loads its model, so it has a fixed cost as well as a
+# per-second one; call it 4 s + 0.2 s per audio second, and the drums 4 s. Every term
+# below is that plus about half again, and BASE covers the worker start (the models'
+# move onto the GPU). A request that is too short stops the run and still costs the
+# visitor, so the margin stays; the numbers are to tighten once more runs are logged
+# (the result's timings carry gpu_call, the whole call, and the stage timings).
+GPU_BASE = 8.0
+GPU_SEPARATE_PER_S = {"htdemucs": 0.2, "htdemucs_6s": 0.35}
+GPU_MUSCRIPTOR_STEM = (6.0, 0.3)       # seconds per stem, + seconds per audio second
+GPU_DRUMS = (4.0, 0.15)
+GPU_MAX = 120
 
-    A guess to tune on the real hardware: every muscriptor stem is a model load plus
-    its transcription, demucs and the drums are a few seconds each. Asking for less
-    queues sooner and is refused less often when a visitor's quota runs low; asking
-    for too little stops the run, so it keeps a margin."""
-    seconds = opts["duration"] or MAX_SECONDS
-    pitched = 5 if opts["demucs_model"] == "htdemucs_6s" else 3
-    if opts["backend"] == "muscriptor":
-        work = 15 + pitched * (8 + 0.6 * seconds)
-    else:
-        work = 15 + pitched * (2 + 0.1 * seconds)
-    return int(min(120, max(30, round(work))))
+#: What ZeroGPU charged per requested second: the first run asked for 93 s and a
+#: signed-out visitor's 120 s were gone after it (the quota counted 140 s).
+QUOTA_COST = 1.5
+#: Daily ZeroGPU quota in seconds (huggingface.co/docs/hub/en/spaces-zerogpu).
+QUOTA_SIGNED_OUT = 120
+QUOTA_FREE_ACCOUNT = 300
+
+PITCHED_STEMS_OF = {"htdemucs": ("vocals", "bass", "other"),
+                    "htdemucs_6s": ("vocals", "bass", "guitar", "piano", "other")}
+
+
+def gpu_seconds(seconds: float, demucs_model: str = "htdemucs", backend: str = "muscriptor",
+                include_vocals_melody: bool = True, drums: bool = True) -> int:
+    """How long to ask ZeroGPU for, for `seconds` of prepared audio.
+    web/static/js/engines.js (onlineGpuSeconds) mirrors this for the page."""
+    s = max(0.0, min(float(seconds), MAX_SECONDS))
+    work = GPU_BASE + GPU_SEPARATE_PER_S[demucs_model] * s
+    if backend in _backends.GPU_BACKENDS:
+        pitched = [x for x in PITCHED_STEMS_OF[demucs_model]
+                   if include_vocals_melody or x != "vocals"]
+        work += len(pitched) * (GPU_MUSCRIPTOR_STEM[0] + GPU_MUSCRIPTOR_STEM[1] * s)
+    if drums:
+        work += GPU_DRUMS[0] + GPU_DRUMS[1] * s
+    return int(min(GPU_MAX, math.ceil(work)))
+
+
+def runs_per_day(request: int, quota: int) -> int:
+    """How many runs of `request` seconds fit in a day's `quota`: a run starts while
+    the quota left covers the request, and costs QUOTA_COST times it."""
+    if request > quota:
+        return 0
+    return int((quota - request) // (request * QUOTA_COST)) + 1
+
+
+def gpu_estimate(seconds: float, opts: dict) -> dict:
+    """The request for this run, and what a day's quota holds of runs like it."""
+    req = gpu_seconds(seconds, opts["demucs_model"], opts["backend"],
+                      opts["include_vocals_melody"], _backends.drums_available())
+    return {"seconds": round(float(seconds), 2), "request": req,
+            "runs_signed_out": runs_per_day(req, QUOTA_SIGNED_OUT),
+            "runs_free_account": runs_per_day(req, QUOTA_FREE_ACCOUNT)}
+
+
+def job_seconds(job: dict) -> float:
+    """The length of a gpu_stage job's prepared audio, in seconds."""
+    return float(sf.info(job["audio"]).duration)
+
+
+def job_gpu_seconds(job: dict) -> int:
+    """The ZeroGPU duration for one core.gpu_stage job (app.py's duration callable)."""
+    return gpu_seconds(job_seconds(job), job["demucs_model"], job["backend"],
+                       job["include_vocals_melody"],
+                       bool(job["drums"]) and _backends.drums_available())
 
 
 def _parts(midi: pathlib.Path, out: pathlib.Path) -> tuple[dict, list[pathlib.Path]]:
@@ -162,13 +224,23 @@ def _mp3(src: pathlib.Path, dst: pathlib.Path) -> pathlib.Path:
 
 
 def run(audio: str | pathlib.Path, opts: dict, work: str | pathlib.Path,
-        progress: Callable[[str, str], None] | None = None) -> dict:
+        progress: Callable[[str, str], None] | None = None,
+        gpu: Callable[[dict], dict] | None = None) -> dict:
     """Run the pipeline on one upload. Returns the page's result JSON and the files to
     hand back: the combined MIDI, one MIDI per part, and the audio (instrumental,
     stems as mp3) plus manifest.json. File references in the JSON are base names, which
-    is how the page finds each file among the endpoint's outputs."""
+    is how the page finds each file among the endpoint's outputs.
+
+    gpu: runs core.gpu_stage's job (app.py: inside the ZeroGPU function); None runs it
+    in this process. Everything else here runs on the CPU."""
     work = pathlib.Path(work)
     out = work / "out"
+    asked: dict = {}
+
+    def on_gpu(job: dict) -> dict:
+        asked.update(gpu_estimate(job_seconds(job), opts))
+        return gpu(job) if gpu else _gpu_stage(job)
+
     res = process(
         audio,
         out_dir=out,
@@ -198,6 +270,7 @@ def run(audio: str | pathlib.Path, opts: dict, work: str | pathlib.Path,
         instrumental=opts["stems_audio"],
         cache=False,           # one visitor's audio never feeds another's run
         progress=progress,
+        gpu=on_gpu,
     )
     if not res.midi_path:
         raise RuntimeError("the run wrote no MIDI")
@@ -232,6 +305,8 @@ def run(audio: str | pathlib.Path, opts: dict, work: str | pathlib.Path,
         "parts": parts,
         "section": {"start": opts["start"] or 0.0, "duration": opts["duration"],
                     "max_seconds": MAX_SECONDS},
+        # what this run asked ZeroGPU for, and a day's quota in runs like it
+        "gpu": asked or None,
     })
     return {"result": result, "midi": pathlib.Path(res.midi_path), "parts": part_files,
             "files": files}

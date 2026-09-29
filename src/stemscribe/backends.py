@@ -204,6 +204,10 @@ BACKENDS: dict[str, Callable[..., pathlib.Path | None]] = {
 
 NONCOMMERCIAL_BACKENDS = frozenset({"muscriptor"})
 
+#: Backends that use a GPU when there is one. basic-pitch runs on the CPU (tflite on
+#: Linux), so a ZeroGPU run keeps it outside the GPU call.
+GPU_BACKENDS = frozenset({"muscriptor"})
+
 
 def get_backend(name: str) -> Callable[..., pathlib.Path | None]:
     if name not in BACKENDS:

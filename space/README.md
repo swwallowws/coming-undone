@@ -25,12 +25,38 @@ non-commercial use only (see Licences). Nothing here may be used commercially.
 
 ## Hardware
 
-ZeroGPU (Settings, Hardware: "ZeroGPU"). GPU work runs inside one `@spaces.GPU`
-function whose duration is estimated per request from the section length and the
-backend (`split.gpu_seconds`, 30 to 120 s). Every visitor has their own daily ZeroGPU
-quota: 2 minutes signed out, 5 minutes with a free Hugging Face account. A request
-that would not fit the visitor's remaining quota fails with ZeroGPU's quota message,
-which the page turns into a friendly note offering the other engines.
+ZeroGPU (Settings, Hardware: "ZeroGPU"). Only the GPU work runs inside the one
+`@spaces.GPU` function (`app._gpu_stage`, which runs `stemscribe.core.gpu_stage`):
+demucs separation, then MuScriptor on each pitched stem and ADT_STR on the drums.
+Decoding, the section cut, tempo, the instrumental mixdown, the basic-pitch fallback,
+cleanup, merge, the grid and the mp3/MIDI files run outside it on the CPU and cost the
+visitor no GPU time.
+
+The request is sized to the prepared audio, measured before asking
+(`split.gpu_seconds`): 8 s, plus 0.2 s per audio second for demucs (0.35 for 6 stems),
+plus 6 s + 0.3 s per audio second for each MuScriptor stem, plus 4 s + 0.15 s per audio
+second for the drums. The first real run (20 s, 4 stems) took 1.6 s to separate and
+28.2 s to transcribe; the terms are that with about half again as margin, since a
+request that runs out stops the run. basic-pitch runs on the CPU, so it only asks for
+demucs and the drums.
+
+| run (4 stems)       | request | runs a day, signed out (120 s) | free account (300 s) |
+| ------------------- | ------- | ------------------------------ | -------------------- |
+| muscriptor, 30 s    | 68 s    | 1                              | 3                    |
+| muscriptor, 20 s    | 55 s    | 1                              | 3                    |
+| muscriptor, 10 s    | 43 s    | 2                              | 4                    |
+| basic-pitch, 30 s   | 23 s    | 3                              | 9                    |
+
+Runs a day count what ZeroGPU charged the first run (1.5 times the request: a 93 s
+request used up a signed-out 120 s) and that a run starts only while the quota left
+covers its request (`split.runs_per_day`). The result JSON's `gpu` field has the
+request and these counts; its `timings.gpu_call` is the whole GPU call, for tuning.
+
+Every visitor has their own daily ZeroGPU quota: 2 minutes signed out, 5 minutes with a
+free Hugging Face account. Calls from Coming Undone's own page (Gradio's JavaScript
+client, from another site) carry no Hugging Face account, so they count as signed out.
+A request that would not fit the visitor's remaining quota fails with ZeroGPU's quota
+message, which the page turns into a friendly note offering the other engines.
 
 One run takes at most 30 s of audio (`split.MAX_SECONDS`), from the section start the
 page sends.

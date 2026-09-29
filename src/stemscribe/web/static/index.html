@@ -147,6 +147,8 @@
   .where { color: var(--ink-mut); font-size: 13px; margin: 0 0 22px; max-width: 62ch; }
   .where a { color: var(--ink-mut); white-space: nowrap; }
   .where a:hover { color: var(--ink); }
+  .where .budget { display: block; margin-top: 4px; }
+  .where .budget:empty { display: none; }
   #contact { border-left: 2px solid var(--acc); padding: 2px 0 4px 14px; margin: -8px 0 24px; max-width: 34rem; }
   #contact p { margin: 0 0 12px; }
   #contact form { display: grid; gap: 10px; }
@@ -185,6 +187,7 @@
       </span>
     </div>
     <p class="where"><span id="where-text"></span>
+      <span id="online-budget" class="budget"></span>
       <a href="#" id="look-local" class="hidden">Running Coming Undone on this computer? Look for it.</a>
       <a href="#" id="contact-open" aria-expanded="false" aria-controls="contact">Get in touch</a></p>
     <div id="contact" class="hidden">
@@ -370,7 +373,7 @@
 </div>
 
 <script type="module">
-import { EngineError, findLocal, localEngine, onlineEngine } from "/js/engines.js";
+import { EngineError, findLocal, localEngine, onlineEngine, onlineGpuSeconds, onlineRunsPerDay, ONLINE_BUDGET } from "/js/engines.js";
 
 // ---- config: every outside address the page uses, in one place
 const params = new URLSearchParams(location.search);
@@ -400,7 +403,7 @@ const engines = { online: onlineEngine(CONFIG.space, () => import(CONFIG.gradioC
 let engine = "online", localBackends = null;
 const WHERE = {
   online: `Runs online, on a free GPU at Hugging Face. Your file goes there for the run and is deleted within the hour. ` +
-          `Up to ${CONFIG.onlineMaxSeconds} s a run, and everyone gets a few minutes a day.`,
+          `Up to ${CONFIG.onlineMaxSeconds} s a run.`,
   local: () => `Runs on this computer, through Coming Undone at ${engines.local.base ? engines.local.base.replace(/^https?:\/\//, "") : location.host}. ` +
               `Nothing leaves your machine: whole songs, full quality.`,
 };
@@ -419,7 +422,29 @@ function selectEngine(id) {
   if (!file) { $("or").classList.toggle("hidden", online); $("url").classList.toggle("hidden", online); }
   $("section-hint").textContent = online
     ? `Online takes up to ${CONFIG.onlineMaxSeconds} s: the section you pick, or the first ${CONFIG.onlineMaxSeconds} s.` : "";
+  showBudget();
   refresh();
+}
+
+// How many online runs a day's free GPU time holds, for this length and these options
+// (engines.js mirrors the Space's budget). Runs from this page count as signed out at
+// Hugging Face: its requests carry no account, so the signed-out quota is the one.
+function onlineSeconds() {
+  const max = CONFIG.onlineMaxSeconds;
+  if (!file || !total) return max;
+  const a = parseFloat($("start").value) || 0, d = parseFloat($("duration").value);
+  const left = Math.max(0, total - a);
+  return Math.min(max, d > 0 ? Math.min(d, left) : left);
+}
+function showBudget() {
+  const el = $("online-budget");
+  if (engine !== "online") { el.textContent = ""; return; }
+  const opts = { backend: $("backend").value, demucs_model: $("model").value, include_vocals_melody: $("vocals").checked };
+  const secs = Math.max(1, Math.round(onlineSeconds()));
+  const runs = s => onlineRunsPerDay(onlineGpuSeconds(s, opts), ONLINE_BUDGET.quota.signedOut);
+  const n = runs(secs);
+  el.textContent = `Online: about ${n} free run${n === 1 ? "" : "s"} a day at ${secs} s.` +
+    (secs > 10 && runs(10) > n ? " Shorter sections leave room for more." : "");
 }
 document.querySelectorAll("#engine-choice button").forEach(b => b.onclick = () => {
   if (b.disabled) return;
@@ -472,6 +497,7 @@ function setBackends(list) {
     const b = list.find(x => x.name === $("backend").value);
     $("backend-hint").textContent = b && b.noncommercial
       ? "best quality; CC-BY-NC weights, so non-commercial use only" : "Apache-2.0, fast, safe for commercial use";
+    showBudget();
   };
   wireChoices();
   choiceHooks.backend();
@@ -486,7 +512,7 @@ const bpmUnit = (meter) => {
   return w ? `BPM (${w})` : "BPM";
 };
 const choiceHooks = {
-  model: () => { $("model-hint").textContent = MODEL_HINT[$("model").value]; },
+  model: () => { $("model-hint").textContent = MODEL_HINT[$("model").value]; showBudget(); },
   meter: () => {
     const m = $("meter").value;
     $("tempo-unit").textContent = bpmUnit(m);
@@ -545,8 +571,8 @@ async function setFile(f) {
   $("wave-box").classList.remove("hidden");
   $("fname").textContent = f.name;
   $("fmeta").textContent = ` ${(f.size / 1048576).toFixed(1)} MB · reading…`;
-  sel = null; peaks = null; drawWave();
-  refresh();
+  sel = null; peaks = null; total = 0; drawWave();
+  refresh(); showBudget();
   try {
     const ctx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 2, 44100);
     const buf = await ctx.decodeAudioData(await f.arrayBuffer());
@@ -556,7 +582,7 @@ async function setFile(f) {
   } catch (e) {
     $("fmeta").textContent = ` ${(f.size / 1048576).toFixed(1)} MB · no preview (the transcription still works)`;
   }
-  drawWave();
+  drawWave(); showBudget();
 }
 
 function computePeaks(buf, n) {
@@ -624,7 +650,7 @@ function showSel() {
     $("sel-text").textContent = "whole song · drag across the waveform to transcribe only a section";
   }
   $("sel-clear").classList.toggle("hidden", !sel);
-  drawWave();
+  drawWave(); showBudget();
 }
 $("sel-clear").onclick = () => { sel = null; showSel(); };
 const fromInputs = () => {
@@ -632,10 +658,11 @@ const fromInputs = () => {
   const a = parseFloat($("start").value) || 0, d = parseFloat($("duration").value);
   sel = (a > 0 || d > 0) ? [a, d > 0 ? Math.min(total, a + d) : total] : null;
   $("sel-clear").classList.toggle("hidden", !sel);
-  drawWave();
+  drawWave(); showBudget();
 };
 $("start").oninput = fromInputs;
 $("duration").oninput = fromInputs;
+$("vocals").addEventListener("change", showBudget);
 
 // ---- a link instead of a file
 function showLinkOnly(on) { document.querySelectorAll(".link-only").forEach(e => e.classList.toggle("hidden", !on)); }
@@ -724,9 +751,9 @@ function fail(e) {
   const kind = e instanceof EngineError ? e.kind : "failed";
   $("err").classList.toggle("gentle", kind === "quota" || kind === "unreachable" || kind === "input");
   if (kind === "quota") {
-    $("err-title").textContent = "Out of online time for today";
+    $("err-title").textContent = "Out of free online runs for today";
     $("err").textContent =
-      "Today's free GPU time at Hugging Face is used up for you" + (e.detail ? ` (it comes back in ${e.detail})` : "") + ". " +
+      "Today's free online runs at Hugging Face are used up for you" + (e.detail ? ` (they come back in ${e.detail})` : "") + ". " +
       (engines.local ? "You can run it on this computer instead, with no limit. " :
         "Coming Undone also runs on your own computer, with no limit: start stemscribe-web there and this page finds it. ") +
       (CONFIG.showBrowserEngine ? "Running it right in your browser is coming later." : "");

@@ -95,6 +95,34 @@ await test("online run maps statuses and the quota error", async () => {
   await assert.rejects(down.run({ file: { name: "a.mp3" } }, {}), e => e.kind === "unreachable");
 });
 
+await test("the online budget follows the clip and the transcriber", () => {
+  const req = E.onlineGpuSeconds(30, { backend: "muscriptor", demucs_model: "htdemucs" });
+  assert.equal(req, 68);
+  assert.equal(E.onlineGpuSeconds(20, {}), 55);                         // defaults: 4 stems, muscriptor
+  assert.equal(E.onlineGpuSeconds(300, {}), req);                        // capped at 30 s
+  assert.ok(E.onlineGpuSeconds(30, { backend: "basic-pitch" }) < 30);
+  assert.equal(E.onlineRunsPerDay(req, E.ONLINE_BUDGET.quota.signedOut), 1);
+  assert.equal(E.onlineRunsPerDay(req, E.ONLINE_BUDGET.quota.freeAccount), 3);
+  assert.equal(E.onlineRunsPerDay(E.onlineGpuSeconds(10, {}), 120), 2);
+});
+
+await test("the Space's CPU steps show as online, the GPU wait as gpu", async () => {
+  const events = [];
+  const eng = E.onlineEngine("x/y", async () => ({
+    Client: { connect: async () => ({ submit: () => (async function* () {
+      yield { type: "status", stage: "pending", progress_data: [{ desc: "preparing the audio" }] };
+      yield { type: "status", stage: "pending", progress_data: [{ desc: "waiting for a GPU" }] };
+      yield { type: "status", stage: "pending", progress_data: [{ desc: "finding the tempo" }] };
+      yield { type: "data", data };
+      yield { type: "status", stage: "complete" };
+    })() }) },
+    handle_file: f => f,
+  }));
+  await eng.run({ file: { name: "a.mp3" } }, {}, e => events.push(e));
+  assert.deepEqual(events.slice(2).map(e => [e.stage, e.message]), [
+    ["online", "preparing the audio"], ["gpu", "separating and transcribing on a GPU"], ["online", "finding the tempo"]]);
+});
+
 await test("local form data skips empty options and joins lists", () => {
   const f = E.localFormData({ file: new Blob(["x"]) }, { backend: "basic-pitch", tempo: null, start: "", mono_stems: ["bass", "vocals"], snap: false, downbeat: 2 });
   assert.equal(f.get("backend"), "basic-pitch");

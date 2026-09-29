@@ -147,7 +147,11 @@ The page has a **Runs:** switch with the engines it can use:
 - **Online** (default): the Hugging Face Space in `space/` (ZeroGPU), called through
   Gradio's JavaScript client (vendored in `web/static/vendor/gradio-client/`). Up to
   30 s of audio per run; every visitor has their own daily GPU quota (2 minutes
-  signed out, 5 with a free Hugging Face account), and running out offers the other
+  signed out, which is what calls from this page count as, 5 with a free Hugging Face
+  account on the Space's own page). Only separation and transcription use the GPU,
+  sized to the clip, so a 30 s run with muscriptor fits about once a day signed out
+  (10 s: twice; basic-pitch: 3 times); the page shows the count for the chosen length
+  (engines.js mirrors `space/split.py`'s budget), and running out offers the other
   engines. The Space id is `CONFIG.space` at the top of the page's script; `?space=`
   in the page's address overrides it (a local Gradio URL, for testing).
 - **This computer**: this server, on port 8002. Shown only when it answers. Full

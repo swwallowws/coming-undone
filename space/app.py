@@ -4,8 +4,11 @@ The public page (Coming Undone's own static page) calls the `split` endpoint thr
 Gradio's JavaScript client, so visitors never see this Gradio UI; it is here for the
 Space's own page and for debugging.
 
-ZeroGPU: GPU work happens only inside the @spaces.GPU function, and models go to cuda
-here at module level, as the docs ask (https://huggingface.co/docs/hub/en/spaces-zerogpu).
+ZeroGPU: GPU work happens only inside the @spaces.GPU function (_gpu_stage: demucs and
+the first transcription pass), sized to the prepared audio; prepare, tempo, the
+instrumental, cleanup, the grid and the mp3/MIDI files run outside it on the CPU, so
+they cost the visitor no GPU quota (split.py has the budget). Models go to cuda here at
+module level, as the docs ask (https://huggingface.co/docs/hub/en/spaces-zerogpu).
 Outside ZeroGPU the decorator does nothing, so this also runs on a CPU laptop:
 
     .venv/bin/python space/app.py           # after scripts/stage_space.py, or with
@@ -32,6 +35,7 @@ import spaces  # noqa: E402
 import torch  # noqa: E402
 
 import split  # noqa: E402
+from stemscribe import core as _core  # noqa: E402
 from stemscribe import separate as _separate  # noqa: E402
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -77,13 +81,21 @@ if os.environ.get("COMING_UNDONE_PRELOAD", "1") != "0":
     _preload()
 
 
-def _gpu_seconds(audio_path: str, opts: dict, work: str) -> int:
-    return split.gpu_seconds(opts)
+def _gpu_seconds(job: dict) -> int:
+    return split.job_gpu_seconds(job)
 
 
 @spaces.GPU(duration=_gpu_seconds)
-def _on_gpu(audio_path: str, opts: dict, work: str) -> dict:
-    return split.run(audio_path, opts, work)
+def _gpu_stage(job: dict) -> dict:
+    """Separation and the first transcription pass, the only GPU work in a run. The job
+    and the result are plain data, so they cross into the ZeroGPU worker as they are.
+    MuScriptor runs as a `muscriptor` process started from here; its device is "auto",
+    which picks cuda when this worker has it (the log line says whether it does)."""
+    print(f"gpu stage: cuda={torch.cuda.is_available()}, "
+          f"asked {split.job_gpu_seconds(job)} s for {split.job_seconds(job):.1f} s of audio", flush=True)
+    out = _core.gpu_stage(job)
+    print(f"gpu stage done: {out['timings']}", flush=True)
+    return out
 
 
 WORK_ROOT = pathlib.Path(tempfile.gettempdir()) / "coming-undone"
@@ -103,9 +115,21 @@ def split_api(audio: str | None, options: str, progress=gr.Progress()):
     except split.OptionError as e:
         raise gr.Error(str(e)) from None
     work = WORK_ROOT / uuid.uuid4().hex[:12]
-    progress(0.05, desc="waiting for a GPU")
+
+    # The run is on the CPU except for _gpu_stage; the page shows these as its log.
+    said = {"prepare": (0.05, "preparing the audio"), "tempo": (0.7, "finding the tempo"),
+            "grid": (0.9, "fitting the beat grid")}
+
+    def step(stage: str, _msg: str) -> None:
+        if stage in said:
+            progress(said[stage][0], desc=said[stage][1])
+
+    def on_gpu(job: dict) -> dict:
+        progress(0.15, desc="waiting for a GPU")
+        return _gpu_stage(job)
+
     try:
-        out = _on_gpu(audio, opts, str(work))
+        out = split.run(audio, opts, str(work), progress=step, gpu=on_gpu)
     except gr.Error:
         raise                              # ZeroGPU's own messages, the quota one included
     except Exception as e:

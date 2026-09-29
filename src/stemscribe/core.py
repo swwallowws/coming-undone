@@ -107,6 +107,86 @@ def _file_sha256(path: pathlib.Path, chunk: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
+def plan_stems(stem_names, include_vocals_melody: bool,
+               drums: str | None) -> tuple[list[str], list[str], list[str]]:
+    """Which stems a pitched backend transcribes (in track order), which go to the
+    drum backend, and a warning for each unpitched stem that is skipped."""
+    wanted = [s for s in PITCHED_STEMS if s in stem_names]
+    if not include_vocals_melody:
+        wanted = [s for s in wanted if s != "vocals"]
+    drum_jobs: list[str] = []
+    skipped: list[str] = []
+    for stem in sorted(set(stem_names) & _backends.UNPITCHED_STEMS):
+        if drums and _backends.drums_available():
+            drum_jobs.append(stem)
+            continue
+        why = ("drums are off" if not drums else
+               "the drum backend is not installed (pip install 'stemscribe[drums]')")
+        skipped.append(f"stem {stem!r} skipped: {why}")
+    return wanted, drum_jobs, skipped
+
+
+def gpu_stage(job: dict, progress: Callable[[str, str], None] | None = None) -> dict:
+    """The part of a run that wants a GPU: demucs, then the first transcription pass
+    of each stem (the pitched backend, and the drum backend on the drums).
+
+    Everything around it (prepare, tempo, the instrumental, the sparse-stem fallback,
+    cleanup, merge, the grid) runs in process() on the CPU. The job and the result are
+    plain data with paths as strings, so the Hugging Face Space can hand the job to a
+    ZeroGPU worker process as it is. The job, as process() builds it:
+
+      audio          the prepared wav
+      stems_dir      where demucs writes, or None when `stems` is given
+      stems          already separated stems {name: path} (a cache hit), or None
+      demucs_model, device, backend, backend_kwargs, drums, include_vocals_melody
+      raw_dir        where each stem's raw MIDI goes, as <stem>.mid
+      cached         stems whose raw MIDI is already in raw_dir
+      pitched        False leaves the pitched stems to the caller (a CPU backend)
+
+    Returns {"stems", "midis", "drum_midis" ({stem: path or None}), "drum_errors"
+    ({stem: message}; a failing drum model never sinks the run), "timings"}.
+    """
+    emit = progress or (lambda stage, msg: None)
+    t0 = time.perf_counter()
+    stems = job["stems"]
+    if stems is None:
+        emit("separate", f"separating with {job['demucs_model']} ...")
+        stems = _separate.separate(job["audio"], pathlib.Path(job["stems_dir"]),
+                                   model_name=job["demucs_model"], device=job["device"])
+    stems = {k: str(v) for k, v in stems.items()}
+    t_sep = round(time.perf_counter() - t0, 2)
+
+    t0 = time.perf_counter()
+    wanted, drum_jobs, _ = plan_stems(stems, job["include_vocals_melody"], job["drums"])
+    raw_dir = pathlib.Path(job["raw_dir"])
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    cached = set(job["cached"])
+
+    def one(stem: str, name: str, fn, kwargs: dict) -> str | None:
+        dst = raw_dir / f"{stem}.mid"
+        if stem in cached:
+            return str(dst)
+        emit("transcribe", f"transcribing {stem} stem with {name} ...")
+        mid = fn(pathlib.Path(stems[stem]), dst, **kwargs)
+        return str(mid) if mid else None
+
+    midis: dict[str, str | None] = {}
+    if job.get("pitched", True):
+        fn = _backends.get_backend(job["backend"])
+        for stem in wanted:
+            midis[stem] = one(stem, job["backend"], fn, job["backend_kwargs"])
+    drum_midis: dict[str, str | None] = {}
+    drum_errors: dict[str, str] = {}
+    for stem in drum_jobs:
+        try:
+            drum_midis[stem] = one(stem, job["drums"], _backends.DRUM_BACKENDS[job["drums"]], {})
+        except _backends.BackendError as e:
+            drum_errors[stem] = str(e)
+    return {"stems": stems, "midis": midis, "drum_midis": drum_midis,
+            "drum_errors": drum_errors,
+            "timings": {"separate": t_sep, "transcribe": round(time.perf_counter() - t0, 2)}}
+
+
 def process(
     input_path: str | pathlib.Path,
     out_dir: str | pathlib.Path,
@@ -135,6 +215,7 @@ def process(
     fallback: bool = True,
     meter: "str | _grid.Meter" = "4/4",
     tempo_mode: str = "auto",
+    gpu: Callable[[dict], dict] | None = None,
 ) -> Result:
     """Audio in, stems + labeled multi-track MIDI out.
 
@@ -161,6 +242,8 @@ def process(
     counts the meter's denominator note; see grid.fit_pulse.
     tempo_mode: "auto" (default) keeps one tempo when it fits and otherwise writes a tempo
     map that follows a drifting band; "constant" or "map" force one or the other.
+    gpu: runs gpu_stage's job somewhere else and returns its result, e.g. inside a
+    ZeroGPU function on the Hugging Face Space. None (default) runs it here.
     """
     if tempo_mode not in _grid.TEMPO_MODES:
         raise ValueError(f"tempo_mode must be one of {', '.join(_grid.TEMPO_MODES)}, got {tempo_mode!r}")
@@ -270,27 +353,64 @@ def process(
                 "MIDI will be shifted back to match",
             )
 
-        # --- 1. separate ----------------------------------------------------
-        # 87% of the runtime, and a pure function of (audio bytes, model).
-        t0 = time.perf_counter()
+        # --- 1. separate, and the first transcription pass -----------------
+        # Separation is 87% of the runtime, and a pure function of (audio bytes,
+        # model); the raw transcriptions are pure functions of the same. Both are
+        # the GPU work, so they run together in gpu_stage: the Hugging Face Space
+        # runs that one call on a ZeroGPU worker and everything else on the CPU.
         audio_hash = file_hash(prepared.path)
         skey = Cache.stems_key(audio_hash, demucs_model)
         hit = cch.get_dir("stems", skey)
+        stems_write = None
         if hit:
-            stem_paths = {p.stem: p for p in sorted(hit.glob("*.wav"))}
+            cached_stems = {p.stem: str(p) for p in sorted(hit.glob("*.wav"))}
             _emit(
                 "separate",
-                f"cached stems ({', '.join(sorted(stem_paths))}) — skipping demucs",
+                f"cached stems ({', '.join(sorted(cached_stems))}), skipping demucs",
             )
         else:
-            _emit("separate", f"separating with {demucs_model} ...")
-            w = cch.begin("stems", skey, fallback=stems_dir)
-            stem_paths = _separate.separate(
-                prepared.path, w.path, model_name=demucs_model, device=device
-            )
-            final = w.commit({"model": demucs_model, "audio_sha": audio_hash})
+            cached_stems = None
+            stems_write = cch.begin("stems", skey, fallback=stems_dir)
+
+        raw_dir = out_dir / "_raw_midi"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        # raw MIDI already in the cache goes straight into raw_dir; gpu_stage skips it
+        drum_backend = drums or ""
+        cached_midis: list[str] = []
+        for stem, name in ([(s, backend) for s in PITCHED_STEMS]
+                           + [(s, drum_backend) for s in sorted(_backends.UNPITCHED_STEMS)]):
+            mhit = cch.get_dir("midi", Cache.midi_key(audio_hash, demucs_model, stem, name,
+                                                       (backend_kwargs or {}) if name == backend else {}))
+            if name and mhit and (mhit / "out.mid").exists():
+                shutil.copy2(mhit / "out.mid", raw_dir / f"{stem}.mid")
+                cached_midis.append(stem)
+                _emit("transcribe", f"cached {stem} transcription ({name})")
+
+        job = {
+            "audio": str(prepared.path),
+            "stems_dir": str(stems_write.path) if stems_write else None,
+            "stems": cached_stems,
+            "demucs_model": demucs_model,
+            "device": device,
+            "backend": backend,
+            "backend_kwargs": backend_kwargs or {},
+            "drums": drums,
+            "include_vocals_melody": include_vocals_melody,
+            "raw_dir": str(raw_dir),
+            "cached": cached_midis,
+            # with a GPU hook, a backend that runs on the CPU anyway stays out of it
+            "pitched": gpu is None or backend in _backends.GPU_BACKENDS,
+        }
+        t0 = time.perf_counter()
+        got = gpu(job) if gpu else gpu_stage(job, progress=_emit)
+        if gpu:
+            # the whole call, waiting for a GPU included: what the visitor waited
+            timings["gpu_call"] = round(time.perf_counter() - t0, 2)
+        timings["separate"] = got["timings"]["separate"]
+        stem_paths = {k: pathlib.Path(v) for k, v in got["stems"].items()}
+        if stems_write:
+            final = stems_write.commit({"model": demucs_model, "audio_sha": audio_hash})
             stem_paths = {k: final / v.name for k, v in stem_paths.items()}
-        timings["separate"] = round(time.perf_counter() - t0, 2)
 
         # Stems live in the cache; the out_dir gets its own copies so deleting
         # the cache can never gut someone's finished output folder.
@@ -341,30 +461,28 @@ def process(
             timings["instrumental"] = round(time.perf_counter() - t0, 2)
 
         # --- 3. transcribe --------------------------------------------------
-        wanted = [s for s in PITCHED_STEMS if s in stem_paths]
-        if not include_vocals_melody:
-            wanted = [s for s in wanted if s != "vocals"]
-
-        drum_jobs: list[str] = []
-        for skipped in sorted(set(stem_paths) & _backends.UNPITCHED_STEMS):
-            if drums and _backends.drums_available():
-                drum_jobs.append(skipped)
-                continue
-            why = ("drums are off" if not drums else
-                   "the drum backend is not installed (pip install 'stemscribe[drums]')")
-            w = f"stem {skipped!r} skipped: {why}"
+        # The first pass ran in gpu_stage; here its results are checked, cached,
+        # and a nearly empty stem is transcribed again with the fallback (on the CPU).
+        wanted, drum_jobs, skipped = plan_stems(stem_paths, include_vocals_melody, drums)
+        for w in skipped:
             warnings.append(w)
             log.warning(w)
 
-        raw_dir = out_dir / "_raw_midi"
-        stem_midis: dict[str, pathlib.Path] = {}
-        fallbacks: dict[str, str] = {}
-        t0 = time.perf_counter()
-        raw_dir.mkdir(parents=True, exist_ok=True)
+        def _keep(stem: str, name: str, kwargs: dict, mid: pathlib.Path | None) -> pathlib.Path | None:
+            if mid is None:
+                w = f"backend {name!r} produced no MIDI for stem {stem!r}"
+                warnings.append(w)
+                log.warning(w)
+                return None
+            if cch.enabled and stem not in cached_midis:
+                # Also deterministic, so cache it: this is what makes tuning a
+                # cleanup knob cost seconds rather than another transcription pass.
+                w = cch.begin("midi", Cache.midi_key(audio_hash, demucs_model, stem, name, kwargs))
+                shutil.copy2(mid, w.path / "out.mid")
+                w.commit({"stem": stem, "backend": name})
+            return mid  # stays in raw_dir; the cache holds a copy
 
         def _transcribe(stem: str, name: str, fn, kwargs: dict) -> pathlib.Path | None:
-            # Also deterministic, so cache it: this is what makes tuning a
-            # cleanup knob cost seconds rather than another basic-pitch pass.
             mkey = Cache.midi_key(audio_hash, demucs_model, stem, name, kwargs)
             hit = cch.get_dir("midi", mkey)
             dst = raw_dir / f"{stem}.mid"
@@ -383,10 +501,17 @@ def process(
                 w = cch.begin("midi", mkey)
                 shutil.copy2(mid, w.path / "out.mid")
                 w.commit({"stem": stem, "backend": name})
-            return mid  # stays in raw_dir; the cache holds a copy
+            return mid
 
+        stem_midis: dict[str, pathlib.Path] = {}
+        fallbacks: dict[str, str] = {}
+        t0 = time.perf_counter()
+        first = {k: pathlib.Path(v) if v else None for k, v in got["midis"].items()}
         for stem in wanted:
-            mid = _transcribe(stem, backend, backend_fn, backend_kwargs or {})
+            if job["pitched"]:
+                mid = _keep(stem, backend, backend_kwargs or {}, first.get(stem))
+            else:              # a CPU backend: its first pass runs here, not on the GPU
+                mid = _transcribe(stem, backend, backend_fn, backend_kwargs or {})
             if fallback and backend != _backends.FALLBACK_BACKEND:
                 # No MIDI at all counts as zero notes: an empty stem must not dodge
                 # the fallback just because the backend wrote no file for it.
@@ -417,16 +542,16 @@ def process(
                 stem_midis[stem] = mid
         drum_midis: dict[str, pathlib.Path] = {}
         for stem in drum_jobs:
-            try:        # drums are optional: a broken drum model never sinks the run
-                mid = _transcribe(stem, drums, _backends.DRUM_BACKENDS[drums], {})
-            except _backends.BackendError as e:
-                w = f"stem {stem!r} skipped: drum backend {drums!r} failed: {e}"
+            if stem in got["drum_errors"]:     # drums are optional: never sinks the run
+                w = f"stem {stem!r} skipped: drum backend {drums!r} failed: {got['drum_errors'][stem]}"
                 warnings.append(w)
                 log.warning(w)
                 continue
+            v = got["drum_midis"].get(stem)
+            mid = _keep(stem, drum_backend, {}, pathlib.Path(v) if v else None)
             if mid:
                 drum_midis[stem] = mid
-        timings["transcribe"] = round(time.perf_counter() - t0, 2)
+        timings["transcribe"] = round(got["timings"]["transcribe"] + time.perf_counter() - t0, 2)
 
         if not stem_midis:
             raise RuntimeError(f"no stem produced MIDI with backend {backend!r}")
