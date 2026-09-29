@@ -204,9 +204,32 @@ def _payload(job: Job, res) -> dict:
     }
 
 
+#: The page is cross-origin isolated, so the "In your browser" engine's wasm fallback
+#: can use threads (SharedArrayBuffer). "credentialless" keeps the page's cross-origin
+#: fetches working (the Space, Hugging Face models, jsDelivr, the contact form); the
+#: page loads no cross-origin iframes.
+ISOLATION_HEADERS = {"Cross-Origin-Opener-Policy": "same-origin",
+                     "Cross-Origin-Embedder-Policy": "credentialless"}
+
+
 @app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    return (STATIC / "index.html").read_text()
+def index() -> HTMLResponse:
+    return HTMLResponse((STATIC / "index.html").read_text(), headers=ISOLATION_HEADERS)
+
+
+#: Where `--browser-models` points: the browser engine's model folder
+#: (browser/models/finish.mjs writes it), served at /browser-models/.
+DEFAULT_BROWSER_MODELS = pathlib.Path("~/.cache/stemscribe/browser-models").expanduser()
+
+
+def mount_browser_models(folder: pathlib.Path) -> bool:
+    """Serve the browser engine's models at /browser-models/ when the folder exists."""
+    folder = pathlib.Path(folder).expanduser()
+    if not (folder / "models.json").is_file():
+        return False
+    if not any(getattr(r, "path", None) == "/browser-models" for r in app.routes):
+        app.mount("/browser-models", StaticFiles(directory=folder), name="browser-models")
+    return True
 
 
 @app.get("/api/config")
@@ -499,8 +522,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--allow-origin", action="append", default=[], metavar="URL",
                    help="another site whose page may use this server (repeatable); "
                         f"always allowed: {', '.join(PUBLIC_ORIGINS)} and localhost")
+    p.add_argument("--browser-models", default=str(DEFAULT_BROWSER_MODELS), metavar="DIR",
+                   help="the \"In your browser\" engine's model folder (browser/models/finish.mjs "
+                        f"makes it), served at /browser-models/; default: {DEFAULT_BROWSER_MODELS}")
     args = p.parse_args(argv)
     PUBLIC_ORIGINS.extend(o.rstrip("/") for o in args.allow_origin)
+    browser_models = mount_browser_models(pathlib.Path(args.browser_models))
 
     if args.jobs_dir:
         JOBS_ROOT = pathlib.Path(args.jobs_dir).expanduser()
@@ -510,6 +537,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"! serving on {args.host}: this UI has no auth and runs local jobs")
     print(f"Coming Undone {__version__}  ->  http://{args.host}:{args.port}")
     print(f"jobs in {JOBS_ROOT}")
+    print(f"browser engine models: {args.browser_models if browser_models else 'none, so In your browser stays unavailable on this server'}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 

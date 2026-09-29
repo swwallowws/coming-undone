@@ -161,6 +161,11 @@
   #contact input[type=email]:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
   .trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
   .err-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .credits { border-top: var(--hairline); margin-top: 40px; padding-top: 16px; color: var(--ink-mut); font-size: 12px; max-width: 70ch; }
+  .credits ul { margin: 0; padding-left: 16px; }
+  .credits li { margin-bottom: 4px; }
+  .credits a { color: var(--ink-mut); }
+  .credits a:hover { color: var(--ink); }
   #err.gentle { font-family: var(--font-sans); font-size: 14px; }
   @media (max-width: 600px) {
     .form-grid { grid-template-columns: 1fr; gap: 4px; }
@@ -183,7 +188,7 @@
     <div class="runs" role="group" aria-label="Where the run happens">
       <span class="label">Runs:</span>
       <span class="choice" id="engine-choice">
-        <button data-engine="online">Online</button><button data-engine="local" class="hidden">This computer</button><button data-engine="browser" class="hidden" disabled title="coming later">In your browser<span class="soon">later</span></button>
+        <button data-engine="online">Online</button><button data-engine="local" class="hidden">This computer</button><button data-engine="browser" class="hidden" disabled title="coming later">In your browser<span class="soon" id="browser-soon">later</span></button>
       </span>
     </div>
     <p class="where"><span id="where-text"></span>
@@ -370,6 +375,24 @@
     </div>
 
   </div>
+
+  <!-- the models behind every engine, and their licences -->
+  <footer class="credits" id="credits">
+    <h2>Models</h2>
+    <ul>
+      <li>Stems: <a href="https://github.com/facebookresearch/demucs" target="_blank" rel="noreferrer noopener">htdemucs</a>
+        (Défossez et al., Meta). Research-only weights. In your browser: the ONNX export by
+        <a href="https://huggingface.co/timcsy/demucs-web-onnx" target="_blank" rel="noreferrer noopener">timcsy</a>.</li>
+      <li>Notes: <a href="https://github.com/spotify/basic-pitch" target="_blank" rel="noreferrer noopener">basic-pitch</a>
+        (Spotify), Apache-2.0.</li>
+      <li>Notes: <a href="https://huggingface.co/MuScriptor" target="_blank" rel="noreferrer noopener">MuScriptor</a>
+        (Mirelo and Kyutai; medium online and on this computer, small in your browser). Code MIT, weights CC BY-NC 4.0:
+        non-commercial use only.</li>
+      <li>Drums: <a href="https://github.com/pier-maker92/ADT_STR" target="_blank" rel="noreferrer noopener">ADT_STR</a>
+        (Melucci, Merialdo, Akama 2026), code and weights CC BY-SA 4.0. In your browser it runs an int8 copy of the
+        weights, shared under the same licence.</li>
+    </ul>
+  </footer>
 </div>
 
 <script type="module">
@@ -388,8 +411,18 @@ const CONFIG = {
   contactEndpoint: "https://formspree.io/f/mrpbjkak",
   // Gradio's JavaScript client, vendored (vendor/gradio-client/VERSION)
   gradioClient: "/vendor/gradio-client/browser.js",
-  // "In your browser" in the switch, marked as coming later; false hides it
+  // "In your browser" in the switch; false hides it. It turns on when its models answer
+  // (a models.json at browserModels); otherwise it stays marked as coming later.
   showBrowserEngine: true,
+  // the browser engine's bundle (browser/build.mjs) and its settings; ?models=<url>
+  // points at another model folder, ?ep=webgpu|wasm forces a backend
+  browserEngine: "/vendor/browser-engine/engine.js",
+  browser: {
+    models: params.get("models") || "/browser-models/",
+    ortWasm: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/",
+    basicPitch: "/vendor/browser-engine/basic-pitch/model.json",
+    ep: params.get("ep") || "auto",
+  },
 };
 
 const $ = id => document.getElementById(id);
@@ -399,28 +432,96 @@ let file = null;
 
 // ---- engines: where the run happens
 const ONLINE_BACKENDS = [{ name: "muscriptor", noncommercial: true }, { name: "basic-pitch", noncommercial: false }];
-const engines = { online: onlineEngine(CONFIG.space, () => import(CONFIG.gradioClient)), local: null };
-let engine = "online", localBackends = null;
+const engines = { online: onlineEngine(CONFIG.space, () => import(CONFIG.gradioClient)), local: null, browser: null };
+let engine = "online", localBackends = null, browserBackends = null, browserInfo = null;
+const MB = b => `${Math.round(b / 1e6)} MB`;
 const WHERE = {
   online: `Runs online, on a free GPU at Hugging Face. Your file goes there for the run and is deleted within the hour. ` +
           `Up to ${CONFIG.onlineMaxSeconds} s a run.`,
   local: () => `Runs on this computer, through Coming Undone at ${engines.local.base ? engines.local.base.replace(/^https?:\/\//, "") : location.host}. ` +
               `Nothing leaves your machine: whole songs, full quality.`,
+  browser: () => {
+    const i = browserInfo || {};
+    // + about 30 MB of runtime: ONNX Runtime's wasm (28 MB) and the engine (2 MB)
+    const size = i.plan ? (i.plan.toDownload > 0
+      ? `The first run downloads about ${MB(i.plan.toDownload + 30e6)} (models and runtime), kept for next time.`
+      : "Its models are already downloaded.") : "";
+    const speed = i.probe && !i.probe.webgpu
+      ? " No WebGPU in this browser, so it runs on the CPU: about 2.5 times slower."
+      : " Desktop Chrome or Edge with WebGPU: about 10 s per 20 s of audio.";
+    return `Runs right here in your browser: nothing leaves your machine. ${size}${speed} ` +
+           `Simpler than the other two: 4 stems, no beat grid.`;
+  },
 };
+
+// "In your browser": the engine's bundle (1.6 MB) loads on the first run; until then
+// only its models' manifest is checked, so the page stays light.
+let browserMod = null;
+const loadBrowser = async () => (browserMod ||= await import(CONFIG.browserEngine));
+function browserEngine() {
+  return {
+    id: "browser",
+    async run(input, opts, on) {
+      const mod = await loadBrowser();
+      try {
+        return await mod.createBrowserEngine(CONFIG.browser).run(input, opts, on);
+      } catch (e) {
+        throw e instanceof EngineError ? e : new EngineError(e.kind || "failed", e.message || String(e), e.detail || (e.stack || ""));
+      }
+    },
+  };
+}
+// What the first run downloads, from the models' manifest and what Cache Storage
+// already holds (the engine caches under the same name and URLs: browser/src/models.js).
+async function browserPlan(m, base) {
+  const url = e => new URL(e.url || e.file, base).href;
+  let cache = null;
+  try { cache = await caches.open("coming-undone-models-v1"); } catch (_) { /* none */ }
+  const have = async u => { try { return !!(cache && await cache.match(u)); } catch (_) { return false; } };
+  const need = [m.htdemucs, m.adt.encoder, m.adt.decoder];
+  let toDownload = 0;
+  for (const e of need) if (!(await have(url(e)))) toDownload += e.bytes;
+  const ms = m.muscriptorSmall;
+  return { toDownload, muscriptorSmall: ms ? ms.bytes : null,
+           muscriptorSmallCached: ms ? await have(new URL(ms.files.lm, new URL(ms.dir, base)).href) : false };
+}
+async function lookForBrowser() {
+  if (!CONFIG.showBrowserEngine) return;
+  try {
+    const base = new URL(CONFIG.browser.models, location.href).href;
+    const r = await fetch(new URL("models.json", base));
+    if (!r.ok) return;
+    const m = await r.json();
+    let webgpu = false;
+    try { webgpu = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch (_) { /* no */ }
+    browserInfo = { probe: { webgpu }, plan: await browserPlan(m, base) };
+    engines.browser = browserEngine();
+    browserBackends = [
+      { name: "basic-pitch", noncommercial: false, hint: "Apache-2.0, fast, safe for commercial use" },
+      ...(m.muscriptorSmall ? [{ name: "muscriptor-small", noncommercial: true,
+        hint: `better notes, slower: about 5 s more per part with WebGPU; +${MB(browserInfo.plan.muscriptorSmall)} ` +
+              `download${browserInfo.plan.muscriptorSmallCached ? " (already here)" : ""}. CC-BY-NC weights, so non-commercial use only` }] : []),
+    ];
+    const b = $("engine-choice").querySelector('[data-engine="browser"]');
+    b.disabled = false; b.title = ""; $("browser-soon").remove();
+    if (remembered() === "browser") selectEngine("browser");
+  } catch (_) { /* no models here: stays "later" */ }
+}
 const remember = v => { try { localStorage.setItem("cu-engine", v); } catch (_) {} };
 const remembered = () => { try { return localStorage.getItem("cu-engine"); } catch (_) { return null; } };
 
 function selectEngine(id) {
   if (id === "local" && !engines.local) id = "online";
+  if (id === "browser" && !engines.browser) id = "online";
   engine = id;
   document.querySelectorAll("#engine-choice button").forEach(b => b.classList.toggle("on", b.dataset.engine === id));
-  $("where-text").textContent = id === "local" ? WHERE.local() : WHERE.online;
-  setBackends(id === "local" ? localBackends : ONLINE_BACKENDS);
-  // links are fetched by the local server; online runs take files
-  const online = id === "online";
+  $("where-text").textContent = id === "local" ? WHERE.local() : id === "browser" ? WHERE.browser() : WHERE.online;
+  setBackends(id === "local" ? localBackends : id === "browser" ? browserBackends : ONLINE_BACKENDS);
+  // links are fetched by the local server; online and in-browser runs take files
+  const online = id !== "local";
   if (online && $("url").value.trim()) { $("url").value = ""; showLinkOnly(false); }
   if (!file) { $("or").classList.toggle("hidden", online); $("url").classList.toggle("hidden", online); }
-  $("section-hint").textContent = online
+  $("section-hint").textContent = id === "online"
     ? `Online takes up to ${CONFIG.onlineMaxSeconds} s: the section you pick, or the first ${CONFIG.onlineMaxSeconds} s.` : "";
   showBudget();
   refresh();
@@ -495,7 +596,7 @@ function setBackends(list) {
   if (!list.some(b => b.name === $("backend").value)) $("backend").value = list[0].name;
   choiceHooks.backend = () => {
     const b = list.find(x => x.name === $("backend").value);
-    $("backend-hint").textContent = b && b.noncommercial
+    $("backend-hint").textContent = b && b.hint ? b.hint : b && b.noncommercial
       ? "best quality; CC-BY-NC weights, so non-commercial use only" : "Apache-2.0, fast, safe for commercial use";
     showBudget();
   };
@@ -731,6 +832,7 @@ $("go").onclick = async () => {
   $("log").textContent = "";
   try {
     const run = await engines[engine].run({ file, url }, collectOptions(), logLine);
+    if (params.has("debug")) window.__cuLastRun = run;    // for browser/verify
     render(run);
     $("spin").classList.add("hidden");
     $("again").classList.remove("hidden");
@@ -756,7 +858,14 @@ function fail(e) {
       "Today's free online runs at Hugging Face are used up for you" + (e.detail ? ` (they come back in ${e.detail})` : "") + ". " +
       (engines.local ? "You can run it on this computer instead, with no limit. " :
         "Coming Undone also runs on your own computer, with no limit: start stemscribe-web there and this page finds it. ") +
-      (CONFIG.showBrowserEngine ? "Running it right in your browser is coming later." : "");
+      (engines.browser ? "Or run it right in your browser, also with no limit." :
+        CONFIG.showBrowserEngine ? "Running it right in your browser is coming later." : "");
+    if (engines.browser) {
+      const b = document.createElement("button");
+      b.textContent = "Run in your browser";
+      b.onclick = () => { selectEngine("browser"); remember("browser"); $("go").click(); };
+      acts.appendChild(b);
+    }
     if (engines.local) {
       const b = document.createElement("button");
       b.className = "primary"; b.textContent = "Run on this computer";
@@ -1087,9 +1196,11 @@ $("contact-form").onsubmit = async e => {
   }
 };
 
-// ---- start: Online by default; This computer joins when it answers
+// ---- start: Online by default; This computer joins when it answers, In your browser
+// when its models do
 selectEngine("online");
 lookForLocal(false);
+lookForBrowser();
 </script>
 </body>
 </html>

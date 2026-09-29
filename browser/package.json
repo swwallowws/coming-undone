@@ -1,0 +1,22 @@
+{
+  "name": "coming-undone-browser-engine",
+  "private": true,
+  "type": "module",
+  "description": "Coming Undone's \"In your browser\" engine: htdemucs + basic-pitch + ADT_STR drums (+ MuScriptor small), all in the page",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node ../tests/js/browser.test.mjs",
+    "verify": "node verify/run.mjs"
+  },
+  "dependencies": {
+    "@spotify/basic-pitch": "1.0.1",
+    "@tensorflow/tfjs": "3.21.0",
+    "demucs-web": "1.0.2",
+    "onnxruntime-web": "1.30.0",
+    "protobufjs": "^7.5.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.63.0"
+  }
+}

@@ -160,7 +160,91 @@ The page has a **Runs:** switch with the engines it can use:
   `--allow-origin`) and for localhost. From a public https page, Chrome asks the
   visitor before reaching localhost, so the page only looks when the permission is
   already granted or the visitor clicks "look for it".
-- **In your browser**: planned, shown as "later".
+- **In your browser**: the whole run in the page, nothing uploaded. Shown as "later"
+  until its models answer (a `models.json` at `CONFIG.browser.models`, by default
+  `/browser-models/` on the page's own server). See the next section.
+
+### In your browser
+
+A lighter engine that runs entirely in the visitor's browser, desktop first:
+htdemucs separation (ONNX), basic-pitch on vocals / bass / other (TF.js), ADT_STR
+drums (ONNX, int8), and MuScriptor small as the opt-in pitched transcriber
+(`muscriptor-small` in the Transcriber choice). WebGPU when the browser has it,
+wasm otherwise. The same Run comes back as from the other engines (roll, parts,
+stems, MIDI, manifest), made in the page as blob URLs.
+
+What it leaves out, for now: 6 stems, the beat grid (bar lines, meter, bar one,
+snap, tempo maps: tempo is one number from the drum hits, the MIDI's bars start at
+0 s), re-stamping the tempo after the run, links (it takes files), and `manifest.json`
+has no input hash. Cleanup, the silence trim and sections work as on the server
+(the cleanup is a port of `cleanup.py`, checked against it by
+`tests/test_browser_js.py`).
+
+Sizes (first run; kept in Cache Storage after that):
+
+| Part | Download |
+|---|---|
+| htdemucs (ONNX, from Hugging Face `timcsy/demucs-web-onnx`) | 180.5 MB |
+| ADT_STR drums, int8 encoder + decoder | 72.9 MB |
+| ONNX Runtime wasm (jsDelivr) + engine bundle + basic-pitch | 30.5 MB |
+| **total** | **about 284 MB** |
+| MuScriptor small, int8 (only when chosen) | +104.6 MB |
+
+Times on an M-series Mac (10 cores), headless Chrome, a 20 s clip, models cached:
+about 9 to 11 s on WebGPU (separation 6 s, drums 2.2 s, basic-pitch 2.1 s for three
+parts), 22 s on wasm (8 threads). With MuScriptor small: about 18 s on WebGPU (it
+takes about 5 s per pitched part). Peak Chrome memory 4 to 5 GB; scales roughly with
+length, so it is for sections and short songs more than whole albums.
+
+Checked end to end by `browser/verify/run.mjs` (the real page in headless Chrome)
+against the server's own outputs for the same clips: drums onset F1 0.99 (house
+excerpt, 95/97 hits) and 0.995 (/try/ clip, 100/99 hits) against PyTorch ADT_STR on
+the server's stem, raw basic-pitch counts within a few notes of the server's
+(50/21/173 vs 51/15/171 on house; the /try/ clip equal to the spike's 49/49/260),
+and MuScriptor small's comping onset F1 0.72 against the server's MuScriptor medium
+(native small scores 0.71). Tempo 150.00 on both clips (the server says 150 and 75,
+the half-time reading of the same pulse).
+
+Build and serve it:
+
+```bash
+npm --prefix browser install
+npm --prefix browser run build           # -> web/static/vendor/browser-engine/ (committed)
+python browser/models/export_adt.py --out browser/models-out
+python browser/models/export_muscriptor.py --out browser/models-out/ms-small   # optional; gated, CC-BY-NC
+node browser/models/finish.mjs browser/models-out    # int8 files + models.json
+stemscribe-web --browser-models browser/models-out   # serves them at /browser-models/
+node browser/verify/run.mjs clip.mp3 --port 8002     # the end-to-end check
+```
+
+How the models were made to run in a page (worked out in a separate feasibility
+spike, not part of this repo):
+
+- ADT_STR's attention is written out by hand for export (the fused PyTorch path does
+  not export), and its decoder re-runs the whole token prefix each step: its causal
+  mask is additive -1e4 and the model leans on what leaks through it, so a KV cache
+  changes the output. With that the ONNX graphs reproduce `ADTModel.sample` token for
+  token (`export_adt.py` checks it). Its mel front end and torchaudio's resampler are
+  ported to JS exactly; the browser's own resampler flips cymbal classes.
+- Weights ship as int8 (`browser/models/quantize.mjs`, per channel) and are turned
+  back into float weights in the page before the session is made
+  (`browser/src/onnxwire.js`): onnxruntime-web 1.30's WebGPU backend computes
+  DequantizeLinear feeding MatMul wrong. Both work at the protobuf wire level on
+  protobufjs 7.
+- MuScriptor small: the log-mel runs in JS with the STFT window stored in the
+  weights (it is not an exact Hann, and the quiet top bands depend on it), generation
+  is a JS loop over a KV-cached step graph, and muscriptor's final note pass is
+  ported. The beat_this grid it uses for its onset delay is not; the page passes its
+  own constant beat grid.
+- The page is cross-origin isolated (COOP `same-origin`, COEP `credentialless`,
+  set by `web/server.py`) so the wasm fallback gets threads. A host that cannot set
+  headers (GitHub Pages) still runs, single-threaded on wasm.
+
+Hosting the models for the public page is still open: htdemucs already comes from
+Hugging Face; the ADT_STR int8 files may be rehosted (CC BY-SA 4.0, with credit and
+the same licence); MuScriptor small's are CC-BY-NC and gated, so rehosting them in
+the open would sidestep the gate. Until a host is picked, the public page shows the
+engine as "later", and `stemscribe-web --browser-models` serves them locally.
 
 `space/README.md` has the Space's API, licences and set-up;
 `scripts/stage_space.py` copies `space/` and the package into `space-dist/`, ready to
@@ -498,6 +582,13 @@ Every model dependency, stated explicitly:
 | MuScriptor (optional extra) | MIT | CC-BY-NC | no |
 | ADT_STR drums (optional extra) | CC BY-SA 4.0 | CC BY-SA 4.0 | yes, with credit (see Drums) |
 | soundfile, pretty_midi, librosa, yt-dlp | BSD, MIT, ISC, Unlicense | none | yes |
+| In your browser: htdemucs ONNX (timcsy/demucs-web-onnx) | MIT (demucs-web) | **research only** (no licence on the export) | **no** |
+| In your browser: ADT_STR int8 | CC BY-SA 4.0 | CC BY-SA 4.0 (an adaptation: same licence, with credit) | yes, with credit |
+| In your browser: MuScriptor small int8 | MIT | CC-BY-NC 4.0, gated | no |
+| In your browser: onnxruntime-web, TF.js, basic-pitch, protobufjs (bundled) | MIT, Apache-2.0, Apache-2.0, BSD-3-Clause | basic-pitch Apache-2.0 | yes |
+
+The studio page credits every model at its foot (the Models list), with these
+licences.
 
 **demucs's weights are not MIT.** Its author, on facebookresearch/demucs#327
 (2022-05-23): "The model weights are not covered by the MIT license, and are

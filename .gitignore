@@ -46,5 +46,11 @@ cookies*.txt
 *.th
 *.ckpt
 
+# the browser engine's sources install and build here; its exported models
+# (browser/models/*) and verification output stay local
+browser/node_modules/
+browser/models-out/
+browser/verify/out/
+
 # macOS
 .DS_Store
