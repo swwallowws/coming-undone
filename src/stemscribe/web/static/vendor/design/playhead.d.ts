@@ -11,9 +11,9 @@ export interface SeekableOptions {
   toTime?: (clientX: number, rect: DOMRect) => number;
   /** The head is at `t` while pressed or dragged (also called on the press). */
   onScrub?: (t: number) => void;
-  /** The pointer was let go at `t`. Once per gesture. */
+  /** The pointer was let go at `t`, or a mouse or pen drag was cancelled there. Once per gesture. */
   onSeek?: (t: number) => void;
-  /** The gesture was taken over (a scroll) or cancelled. */
+  /** A touch was taken over (a scroll) or cancelled: put the head back. */
   onCancel?: () => void;
   /** False ignores presses. */
   enabled?: () => boolean;

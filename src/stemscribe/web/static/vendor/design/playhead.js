@@ -11,7 +11,8 @@
  *
  *  With `touch-action: pan-y` (playhead.css) a sideways drag moves the head and
  *  an upward one still scrolls the page; when the browser takes a touch over for
- *  scrolling, onCancel() runs instead of onSeek. Pointer only: keep a slider or
+ *  scrolling, onCancel() runs instead of onSeek. A mouse or pen drag the browser
+ *  cancels still ends with onSeek at the last place shown. Pointer only: keep a slider or
  *  keys for the keyboard. Styles are in playhead.css. */
 
 /** Clamp `t` into [0, duration]. A duration that is not a positive number gives 0. */
@@ -35,14 +36,16 @@ const read = (v) => (typeof v === "function" ? v() : v);
  *    across the element's width; or
  *  - toTime(clientX, rect): your own mapping, for a zoomed or scrolled view.
  *  - onScrub(t): the head is at t while pressed or dragged (also on the press).
- *  - onSeek(t): the pointer was let go at t. Called once per gesture.
- *  - onCancel(): the gesture was taken over (a scroll) or cancelled.
+ *  - onSeek(t): the pointer was let go at t (or a mouse or pen drag was cancelled
+ *    there). Called once per gesture.
+ *  - onCancel(): a touch was taken over (a scroll) or cancelled: put the head back.
  *  - enabled(): false ignores presses (nothing loaded yet). Default: always.
  *  Returns a function that removes the listeners. */
 export function seekable(el, opts) {
   const map = opts.toTime
     ?? ((x, rect) => timeAt(x, rect.left, rect.width, read(opts.duration)));
   let active = null; // pointerId of the gesture under way
+  let touch = false; // it began as a touch
   let at = 0;
 
   const timeOf = (e) => map(e.clientX, el.getBoundingClientRect());
@@ -57,6 +60,7 @@ export function seekable(el, opts) {
     if (!(el.getBoundingClientRect().width > 0)) return;
     if (e.pointerType === "mouse") e.preventDefault(); // no text selection while dragging
     active = e.pointerId;
+    touch = e.pointerType === "touch";
     try { el.setPointerCapture(e.pointerId); } catch { /* a synthetic event has no pointer to capture */ }
     el.classList.add("seeking");
     at = timeOf(e);
@@ -73,10 +77,15 @@ export function seekable(el, opts) {
     finish();
     opts.onSeek?.(at);
   };
+  // Only a touch is taken over for scrolling, and then the head goes back. A mouse or
+  // pen drag that the browser cancels or loses (the window lost focus, the capture was
+  // dropped) ends where the head was last shown: going back would jump the head to its
+  // old place. The cancel event's own position is not used; it can be 0 or stale.
   const cancel = (e) => {
     if (e.pointerId !== active) return;
     finish();
-    opts.onCancel?.();
+    if (touch) opts.onCancel?.();
+    else opts.onSeek?.(at);
   };
 
   el.classList.add("seekable");
