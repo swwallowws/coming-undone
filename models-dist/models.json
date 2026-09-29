@@ -1,0 +1,21 @@
+{
+ "version": 1,
+ "htdemucs": {
+  "url": "https://huggingface.co/timcsy/demucs-web-onnx/resolve/92e33df61cfc9eb820272aaa62d2ef6dcf4d950d/htdemucs_embedded.onnx",
+  "bytes": 180534758,
+  "licence": "no licence stated on timcsy/demucs-web-onnx; Demucs (Meta) is MIT"
+ },
+ "adt": {
+  "encoder": {
+   "file": "adt_encoder.int8.onnx",
+   "bytes": 35709676,
+   "sha256": "71f89f6aba1dd74bf2792a9b19f89b4a8ec438362e6429d9578ffd9ea2e5320f"
+  },
+  "decoder": {
+   "file": "adt_decoder.int8.onnx",
+   "bytes": 37204260,
+   "sha256": "7e8c7d3dc4013461d7a9ce5cf39043d7a052e68efb053ede3055d59c0d975b3e"
+  },
+  "licence": "CC-BY-SA-4.0 (ADT_STR, Melucci, Merialdo, Akama 2026; int8 adaptation)"
+ }
+}

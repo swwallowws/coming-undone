@@ -22,7 +22,8 @@ const q = (a, b) => {
 };
 const size = (f) => statSync(join(dir, f)).size;
 
-const HTDEMUCS_URL = "https://huggingface.co/timcsy/demucs-web-onnx/resolve/main/htdemucs_embedded.onnx";
+// pinned; the same revision as browser/src/models.js and scripts/stage_models.py
+const HTDEMUCS_URL = "https://huggingface.co/timcsy/demucs-web-onnx/resolve/92e33df61cfc9eb820272aaa62d2ef6dcf4d950d/htdemucs_embedded.onnx";
 const HTDEMUCS_BYTES = 180534758;
 
 q("adt_encoder.onnx", "adt_encoder.int8.onnx");

@@ -51,6 +51,9 @@ cookies*.txt
 browser/node_modules/
 browser/models-out/
 browser/verify/out/
+# the public model repo as staged for upload (scripts/stage_models.py): README.md and
+# models.json are tracked, the .onnx files stay out (*.onnx above)
+models-dist/*.onnx
 
 # macOS
 .DS_Store

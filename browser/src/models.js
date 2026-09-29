@@ -6,7 +6,9 @@
 // the page reads the same cache to size the first download (index.html browserPlan)
 const CACHE = "coming-undone-models-v1";
 
-const HTDEMUCS = { url: "https://huggingface.co/timcsy/demucs-web-onnx/resolve/main/htdemucs_embedded.onnx", bytes: 180534758 };
+// timcsy/demucs-web-onnx, pinned to the commit the engine was checked against
+export const HTDEMUCS_REV = "92e33df61cfc9eb820272aaa62d2ef6dcf4d950d";
+const HTDEMUCS = { url: `https://huggingface.co/timcsy/demucs-web-onnx/resolve/${HTDEMUCS_REV}/htdemucs_embedded.onnx`, bytes: 180534758 };
 
 export async function loadManifest(base) {
   let m = null;
@@ -16,7 +18,7 @@ export async function loadManifest(base) {
   } catch (_) { /* no manifest: defaults below */ }
   m ||= {
     htdemucs: HTDEMUCS,
-    adt: { encoder: { file: "adt_encoder.int8.onnx", bytes: 35709844 }, decoder: { file: "adt_decoder.int8.onnx", bytes: 37204424 } },
+    adt: { encoder: { file: "adt_encoder.int8.onnx", bytes: 35709676 }, decoder: { file: "adt_decoder.int8.onnx", bytes: 37204260 } },
   };
   const url = (e) => new URL(e.url || e.file, base).href;
   const out = {

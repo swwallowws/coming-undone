@@ -184,7 +184,7 @@ Sizes (first run; kept in Cache Storage after that):
 
 | Part | Download |
 |---|---|
-| htdemucs (ONNX, from Hugging Face `timcsy/demucs-web-onnx`) | 180.5 MB |
+| htdemucs (ONNX, from Hugging Face `timcsy/demucs-web-onnx`, pinned) | 180.5 MB |
 | ADT_STR drums, int8 encoder + decoder | 72.9 MB |
 | ONNX Runtime wasm (jsDelivr) + engine bundle + basic-pitch | 30.5 MB |
 | **total** | **about 284 MB** |
@@ -240,11 +240,25 @@ spike, not part of this repo):
   set by `web/server.py`) so the wasm fallback gets threads. A host that cannot set
   headers (GitHub Pages) still runs, single-threaded on wasm.
 
-Hosting the models for the public page is still open: htdemucs already comes from
-Hugging Face; the ADT_STR int8 files may be rehosted (CC BY-SA 4.0, with credit and
-the same licence); MuScriptor small's are CC-BY-NC and gated, so rehosting them in
-the open would sidestep the gate. Until a host is picked, the public page shows the
-engine as "later", and `stemscribe-web --browser-models` serves them locally.
+Models for the public page: the page looks for `/browser-models/models.json` on its
+own server first, then at `CONFIG.publicModels`, the public Hugging Face repo
+`swwallowws/coming-undone-browser-models`. That repo holds the ADT_STR int8 files
+(CC BY-SA 4.0, credited in its model card, the int8 copy under the same licence) and
+a `models.json` pointing at htdemucs on `timcsy/demucs-web-onnx`, pinned to a
+revision. basic-pitch ships with the page. MuScriptor small stays out (gated,
+CC-BY-NC): on the public page the choice shows switched off and points to Online and
+This computer; served by `stemscribe-web --browser-models` it stays available. Until
+the repo exists the public page shows the engine as "later".
+
+```bash
+.venv/bin/python scripts/stage_models.py          # -> models-dist/ (README.md tracked, .onnx not)
+.venv/bin/python out/upload_models.py --dry-run   # the file list, no upload
+node browser/verify/public_models.mjs --staged models-dist   # before the upload
+node browser/verify/public_models.mjs                        # after it, from the public URLs
+```
+
+To pin the page to an upload, put its commit sha in place of `main` in
+`CONFIG.publicModels`.
 
 `space/README.md` has the Space's API, licences and set-up;
 `scripts/stage_space.py` copies `space/` and the package into `space-dist/`, ready to

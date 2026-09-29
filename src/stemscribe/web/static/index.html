@@ -386,7 +386,7 @@
       <li>Notes: <a href="https://github.com/spotify/basic-pitch" target="_blank" rel="noreferrer noopener">basic-pitch</a>
         (Spotify), Apache-2.0.</li>
       <li>Notes: <a href="https://huggingface.co/MuScriptor" target="_blank" rel="noreferrer noopener">MuScriptor</a>
-        (Mirelo and Kyutai; medium online and on this computer, small in your browser). Code MIT, weights CC BY-NC 4.0:
+        (Mirelo and Kyutai; medium online and on this computer, small in your browser when this computer serves the page). Code MIT, weights CC BY-NC 4.0:
         non-commercial use only.</li>
       <li>Drums: <a href="https://github.com/pier-maker92/ADT_STR" target="_blank" rel="noreferrer noopener">ADT_STR</a>
         (Melucci, Merialdo, Akama 2026), code and weights CC BY-SA 4.0. In your browser it runs an int8 copy of the
@@ -412,8 +412,13 @@ const CONFIG = {
   // Gradio's JavaScript client, vendored (vendor/gradio-client/VERSION)
   gradioClient: "/vendor/gradio-client/browser.js",
   // "In your browser" in the switch; false hides it. It turns on when its models answer
-  // (a models.json at browserModels); otherwise it stays marked as coming later.
+  // (a models.json at browser.models, else at publicModels); otherwise it stays marked
+  // as coming later.
   showBrowserEngine: true,
+  // the public model repo (models-dist/, uploaded by out/upload_models.py), used when
+  // the page's own server has no /browser-models/ (GitHub Pages). To pin it, put the
+  // upload's commit sha in place of "main".
+  publicModels: "https://huggingface.co/swwallowws/coming-undone-browser-models/resolve/main/",
   // the browser engine's bundle (browser/build.mjs) and its settings; ?models=<url>
   // points at another model folder, ?ep=webgpu|wasm forces a backend
   browserEngine: "/vendor/browser-engine/engine.js",
@@ -488,19 +493,32 @@ async function browserPlan(m, base) {
 async function lookForBrowser() {
   if (!CONFIG.showBrowserEngine) return;
   try {
-    const base = new URL(CONFIG.browser.models, location.href).href;
-    const r = await fetch(new URL("models.json", base));
-    if (!r.ok) return;
-    const m = await r.json();
+    // this server's own models first (stemscribe-web --browser-models), then the public
+    // repo; ?models= names one folder and nothing else
+    const bases = params.get("models") ? [CONFIG.browser.models] : [CONFIG.browser.models, CONFIG.publicModels];
+    let m = null, base = null;
+    for (const b of bases) {
+      base = new URL(b, location.href).href;
+      try {
+        const r = await fetch(new URL("models.json", base));
+        if (r.ok) { m = await r.json(); break; }
+      } catch (_) { /* not here */ }
+    }
+    if (!m) return;
+    CONFIG.browser.models = base;
     let webgpu = false;
     try { webgpu = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch (_) { /* no */ }
     browserInfo = { probe: { webgpu }, plan: await browserPlan(m, base) };
     engines.browser = browserEngine();
+    // MuScriptor small's weights are gated and CC-BY-NC, so the public repo leaves them
+    // out: there the choice shows, switched off, and points to the other engines
     browserBackends = [
-      { name: "basic-pitch", noncommercial: false, hint: "Apache-2.0, fast, safe for commercial use" },
-      ...(m.muscriptorSmall ? [{ name: "muscriptor-small", noncommercial: true,
+      { name: "basic-pitch", noncommercial: false, hint: "Apache-2.0, fast, safe for commercial use" +
+        (m.muscriptorSmall ? "" : ". MuScriptor's better notes: Online or on This computer") },
+      m.muscriptorSmall ? { name: "muscriptor-small", noncommercial: true,
         hint: `better notes, slower: about 5 s more per part with WebGPU; +${MB(browserInfo.plan.muscriptorSmall)} ` +
-              `download${browserInfo.plan.muscriptorSmallCached ? " (already here)" : ""}. CC-BY-NC weights, so non-commercial use only` }] : []),
+              `download${browserInfo.plan.muscriptorSmallCached ? " (already here)" : ""}. CC-BY-NC weights, so non-commercial use only` }
+        : { name: "muscriptor-small", off: "MuScriptor runs Online or on This computer" },
     ];
     const b = $("engine-choice").querySelector('[data-engine="browser"]');
     b.disabled = false; b.title = ""; $("browser-soon").remove();
@@ -592,8 +610,9 @@ const MODEL_HINT = {
 };
 function setBackends(list) {
   const box = $("backend-choice");
-  box.innerHTML = list.map(b => `<button data-v="${esc(b.name)}">${esc(b.name)}</button>`).join("");
-  if (!list.some(b => b.name === $("backend").value)) $("backend").value = list[0].name;
+  box.innerHTML = list.map(b => b.off ? `<button data-v="${esc(b.name)}" disabled title="${esc(b.off)}">${esc(b.name)}</button>`
+    : `<button data-v="${esc(b.name)}">${esc(b.name)}</button>`).join("");
+  if (!list.some(b => !b.off && b.name === $("backend").value)) $("backend").value = list[0].name;
   choiceHooks.backend = () => {
     const b = list.find(x => x.name === $("backend").value);
     $("backend-hint").textContent = b && b.hint ? b.hint : b && b.noncommercial
