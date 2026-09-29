@@ -8,7 +8,9 @@ manifest.json. <out-dir> gets a self-contained static site:
     <out-dir>/try/index.html, try.js, try.css   the page (from web/static/try)
     <out-dir>/try/data.json                      parts, notes, bar lines
     <out-dir>/try/stems/<id>.mp3, mix.mp3         128 kbps (ffmpeg)
-    <out-dir>/vendor/design/                     the design system
+    <out-dir>/vendor/design/                     the design system, its GM soundfont (sound/gm.sf3)
+                                                 and the synth that plays the MIDI with it
+                                                 (sound/spessasynth/)
 
 Serve <out-dir> and open /try/. Everything is put on the stems' timeline: a run
 that trimmed leading silence writes its MIDI on the original file's timeline,
@@ -97,6 +99,8 @@ def freeze(job_dir, out_dir, *, encode: bool = True, title: str | None = None,
     for f in (STATIC / "try").iterdir():
         if f.is_file():
             shutil.copy2(f, page / f.name)
+    # the design system, with its General MIDI soundfont (vendor/design/sound/gm.sf3)
+    # and spessasynth (vendor/design/sound/spessasynth/), which plays the parts' MIDI with it
     shutil.copytree(STATIC / "vendor" / "design", out / "vendor" / "design", dirs_exist_ok=True)
     shutil.copytree(STATIC / "favicons", out / "favicons", dirs_exist_ok=True)
 
@@ -129,7 +133,10 @@ def freeze(job_dir, out_dir, *, encode: bool = True, title: str | None = None,
                 continue
             notes.append([round(max(s, 0.0), 4), round(min(e, duration), 4), int(n.pitch), int(n.velocity)])
         parts.append({"id": stem, "name": PART_NAMES.get(stem, stem), "audio": audio,
-                      "drums": bool(inst.is_drum) if inst else stem == "drums", "notes": notes})
+                      "drums": bool(inst.is_drum) if inst else stem == "drums",
+                      # the General MIDI program the page plays it with (the MIDI's own)
+                      "program": int(inst.program) if inst else track_for_stem(stem)[1],
+                      "notes": notes})
 
     peak = float(np.abs(mix).max()) if mix.size else 0.0
     if peak > 0.99:

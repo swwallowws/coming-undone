@@ -394,6 +394,35 @@ def test_page_online_limit_matches_the_space():
     assert float(re.search(r"onlineMaxSeconds: ([\d.]+)", page).group(1)) == split.MAX_SECONDS
 
 
+def test_page_is_cross_origin_isolated_for_wasm_threads(client):
+    r = client.get("/")
+    assert r.headers["cross-origin-opener-policy"] == "same-origin"
+    assert r.headers["cross-origin-embedder-policy"] == "credentialless"
+
+
+def test_browser_engine_bundle_and_basic_pitch_model_are_served(client):
+    js = client.get("/vendor/browser-engine/engine.js")
+    assert js.status_code == 200 and "createBrowserEngine" in js.text
+    assert client.get("/vendor/browser-engine/basic-pitch/model.json").status_code == 200
+    assert client.get("/vendor/browser-engine/LICENSES.txt").status_code == 200
+
+
+def test_browser_models_mount_only_with_a_manifest(client, tmp_path):
+    assert webapp.mount_browser_models(tmp_path / "missing") is False
+    (tmp_path / "models.json").write_text('{"version": 1}')
+    assert webapp.mount_browser_models(tmp_path) is True
+    assert webapp.mount_browser_models(tmp_path) is True        # mounting twice is fine
+    assert client.get("/browser-models/models.json").json() == {"version": 1}
+
+
+def test_page_offers_the_browser_engine_and_credits_its_models(client):
+    page = client.get("/").text
+    assert 'data-engine="browser"' in page and 'browserEngine: here("./vendor/browser-engine/engine.js")' in page
+    assert "ADT_STR" in page and "CC BY-SA 4.0" in page
+    assert "CC BY-NC 4.0" in page and "non-commercial" in page
+    assert "muscriptor-small" in page
+
+
 def test_engines_and_gradio_client_are_served(client):
     js = client.get("/js/engines.js")
     assert js.status_code == 200 and "export function onlineEngine" in js.text
