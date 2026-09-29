@@ -28,6 +28,31 @@ audio in (mp3/wav/m4a) — a file, or a URL
                       optional latency removal + snapping (--snap)
 ```
 
+## Run it on this computer (for the website)
+
+The website (https://swwallowws.github.io/coming-undone-web/) runs a song Online or In
+your browser. "This computer" runs it here instead: full quality, whole songs, and the
+audio never leaves the machine. It needs Python 3.11, `ffmpeg` and a few GB of disk:
+torch, and the models, which download on the first run (MuScriptor alone is about 2 GB).
+
+1. Install Python 3.11 and ffmpeg (on a Mac: `brew install python@3.11 ffmpeg`).
+2. Get the code and install it:
+   ```bash
+   git clone https://github.com/swwallowws/coming-undone.git
+   cd coming-undone
+   python3.11 -m venv .venv
+   .venv/bin/pip install 'torch==2.8.0' 'torchaudio==2.8.0'
+   .venv/bin/pip install -e '.[web,drums,muscriptor]'
+   ```
+3. For MuScriptor, the best notes: accept its terms at
+   https://huggingface.co/MuScriptor/muscriptor-medium, then `.venv/bin/hf auth login`.
+   Without it, choose basic-pitch on the page.
+4. Start it: `.venv/bin/stemscribe-web`. Leave it running.
+5. Open the website and pick "This computer" under Runs. Chrome asks once whether the
+   page may reach this computer; allow it.
+
+It also runs on its own at http://127.0.0.1:8002, no website needed.
+
 ## Install
 
 Needs Python 3.11 and `ffmpeg` on PATH. Developed on macOS (Apple Silicon);
