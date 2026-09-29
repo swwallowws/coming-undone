@@ -587,8 +587,15 @@ Every model dependency, stated explicitly:
 | In your browser: MuScriptor small int8 | MIT | CC-BY-NC 4.0, gated | no |
 | In your browser: onnxruntime-web, TF.js, basic-pitch, protobufjs (bundled) | MIT, Apache-2.0, Apache-2.0, BSD-3-Clause | basic-pitch Apache-2.0 | yes |
 
+| /try/ MIDI player: spessasynth (vendored, `vendor/spessasynth/`) | Apache-2.0 | none | yes |
+| /try/ MIDI sounds: `gm.sf3`, the design system's shared General MIDI soundfont (`vendor/design/sound/`, synced with `design/sync.sh --sound`) | none | GeneralUser GS License v2.0, S. Christian Collins (trimmed copy; `NOTICE` beside it) | yes |
+
 The studio page credits every model at its foot (the Models list), with these
-licences.
+licences. The /try/ page plays each part's MIDI on its General MIDI program from
+that soundfont (drums on channel 10's Standard kit), with spessasynth scheduling
+the notes on the page's audio clock; `browser/verify/try_sound.mjs` checks it by ear
+in headless Chrome (every part sounds, bass below melody, a real kit, silence after
+switching back to the audio) and saves each part's recording to listen to.
 
 **demucs's weights are not MIT.** Its author, on facebookresearch/demucs#327
 (2022-05-23): "The model weights are not covered by the MIT license, and are

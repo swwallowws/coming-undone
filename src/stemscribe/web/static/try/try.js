@@ -1,6 +1,9 @@
 // Guided stemscribe demo over one frozen run (data.json from scripts/freeze_try.py):
 // press play, solo a part, flip it from its audio stem to the MIDI stemscribe wrote.
 // Every source runs off one AudioContext clock, made inside the first Play click.
+// The MIDI plays on real instruments: spessasynth with the design system's shared
+// General MIDI soundfont (vendor/design/sound/gm.sf3), each part on its own program,
+// drums on channel 10's Standard kit. Notes are timed on the AudioContext clock.
 import { demoShell } from "../vendor/design/demoshell.js";
 import { iconButton } from "../vendor/design/iconbutton.js";
 import { noteColor } from "../vendor/design/tokens.js";
@@ -49,8 +52,15 @@ let data = null;
 let buffers = {}; // part id -> AudioBuffer
 let peaks = null;
 const stemPeaks = {}; // part id -> the stem's own peaks, drawn while you hear it as audio
-let ctx = null, master = null, gains = {}, sources = [], synthBus = null, noise = null;
+let ctx = null, master = null, gains = {}, sources = [];
+let synth = null, synthOut = null, synthLoad = null, channelOf = {}, quietUntil = 0;
 let playing = false, pos = 0, t0 = 0, scheduledTo = 0, timer = 0;
+
+const VENDOR = new URL("../vendor/", import.meta.url);
+const SOUNDFONT = new URL("design/sound/gm.sf3", VENDOR).href;
+// a part's General MIDI program when data.json (an older freeze) does not say
+const PROGRAM = { vocals: 53, bass: 33, other: 0, guitar: 25, piano: 0 };
+const LOOKAHEAD = 0.2;
 let solo = null; // part id or null
 const modes = {}; // part id -> "audio" | "midi"
 
@@ -141,12 +151,39 @@ function ensureContext() {
       gains[p.id] = ctx.createGain();
       gains[p.id].connect(master);
     }
-    noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    synthOut = ctx.createGain();
+    synthOut.gain.value = 0.8;
+    synthOut.connect(master);
     setGains(true);
+    loadSynth();
   }
   if (ctx.state === "suspended") ctx.resume();
+}
+
+// the synth and the soundfont (4.6 MB) load in the background after the first Play;
+// the MIDI is silent until they are in, the audio stems play at once
+function loadSynth() {
+  synthLoad ||= (async () => {
+    const lib = await import(new URL("spessasynth/spessasynth_lib.min.js", VENDOR).href);
+    await ctx.audioWorklet.addModule(new URL("spessasynth/spessasynth_processor.min.js", VENDOR).href);
+    const s = new lib.WorkletSynthesizer(ctx);
+    s.connect(synthOut);
+    const sf = await (await fetch(SOUNDFONT)).arrayBuffer();
+    await s.soundBankManager.addSoundBank(sf, "gm");
+    await s.isReady;
+    // one channel per part, skipping 10, which is the drum kit's
+    let ch = 0;
+    for (const p of data.parts) {
+      if (p.drums) { channelOf[p.id] = 9; continue; }
+      if (ch === 9) ch++;
+      channelOf[p.id] = ch;
+      s.programChange(ch, p.program ?? PROGRAM[p.id] ?? 0);
+      ch++;
+    }
+    synth = s;
+  })();
+  synthLoad.catch((e) => { console.warn("the MIDI player did not load", e); synthLoad = null; });
+  return synthLoad;
 }
 
 function audible(id) {
@@ -163,17 +200,18 @@ function setGains(now = false) {
   }
 }
 
-// a fresh synth bus: dropping the old one silences whatever it had queued
+// silence the MIDI for a switch (stop, solo, audio/MIDI): notes already queued on the
+// synth cannot be taken back, so fade it out until they have all passed (the lookahead),
+// release everything, and schedule nothing new before then
 function newSynthBus() {
-  if (synthBus) {
-    synthBus.gain.setTargetAtTime(0, ctx.currentTime, 0.01);
-    const old = synthBus;
-    setTimeout(() => old.disconnect(), 200);
-  }
-  synthBus = ctx.createGain();
-  synthBus.gain.value = 0.5;
-  synthBus.connect(master);
-  scheduledTo = songTime();
+  const now = ctx.currentTime, until = now + LOOKAHEAD + 0.05;
+  const g = synthOut.gain;
+  g.cancelScheduledValues(now);
+  g.setTargetAtTime(0, now, 0.01);
+  g.setValueAtTime(0.8, until);
+  quietUntil = until;
+  setTimeout(() => { if (synth) synth.stopAll(true); }, (until - now) * 1000 - 10);
+  scheduledTo = songTime() + (until - now);
 }
 
 function startPlayback() {
@@ -188,8 +226,7 @@ function startPlayback() {
     return s;
   });
   playing = true;
-  newSynthBus();
-  scheduledTo = pos;
+  scheduledTo = Math.max(pos, pos + (quietUntil - t0));
   schedule();
   timer = setInterval(schedule, 50);
   playBtn.setPressed(true);
@@ -205,7 +242,7 @@ function stopPlayback(to = songTime()) {
     try { s.stop(); } catch {}
   }
   sources = [];
-  if (synthBus) newSynthBus();
+  newSynthBus();
   playBtn.setPressed(false);
   paintTime();
   drawWave();
@@ -221,53 +258,31 @@ function schedule() {
     pos = 0;
     return;
   }
-  if (!midiOn()) {
-    scheduledTo = now + 0.2;
+  if (!midiOn() || !synth) {
+    scheduledTo = Math.max(scheduledTo, now + LOOKAHEAD);
     return;
   }
-  const from = Math.max(scheduledTo, now), to = now + 0.2;
+  const from = Math.max(scheduledTo, now), to = now + LOOKAHEAD;
   const p = part(solo);
   for (const n of p.notes) {
     if (n[0] >= from && n[0] < to) note(p, n, t0 + (n[0] - pos));
   }
-  scheduledTo = to;
+  scheduledTo = Math.max(scheduledTo, to);
 }
 
+// one note on the soloed part's instrument, at `at` on the AudioContext clock
 function note(p, [s, e, pitch, vel], at) {
-  const amp = 0.15 + 0.55 * (vel / 127);
-  if (p.drums) return hit(pitch, amp, at);
-  const len = Math.min(Math.max(e - s, 0.06), 4);
-  const o = ctx.createOscillator(), g = ctx.createGain();
-  o.type = "triangle";
-  o.frequency.value = 440 * 2 ** ((pitch - 69) / 12);
-  g.gain.setValueAtTime(0, at);
-  g.gain.linearRampToValueAtTime(amp * 0.6, at + 0.006);
-  g.gain.setTargetAtTime(amp * 0.4, at + 0.02, 0.15);
-  g.gain.setTargetAtTime(0, at + len, 0.04);
-  o.connect(g).connect(synthBus);
-  o.start(at);
-  o.stop(at + len + 0.3);
+  const ch = channelOf[p.id];
+  const v = Math.max(1, Math.min(127, Math.round(vel)));
+  // a drum hit is an onset; the kit's samples ring on by themselves
+  const len = p.drums ? 0.1 : Math.min(Math.max(e - s, 0.06), 8);
+  synth.noteOn(ch, pitch, v, { time: at });
+  synth.noteOff(ch, pitch, { time: at + len });
 }
 
-// drums: noise bursts, filtered by what the General MIDI note is
-function hit(pitch, amp, at) {
-  const kick = pitch === 35 || pitch === 36;
-  const hat = [42, 44, 46, 51, 53, 59].includes(pitch);
-  const snare = [37, 38, 39, 40].includes(pitch);
-  const src = ctx.createBufferSource();
-  src.buffer = noise;
-  const f = ctx.createBiquadFilter();
-  f.type = kick ? "lowpass" : hat ? "highpass" : "bandpass";
-  f.frequency.value = kick ? 140 : hat ? 7000 : snare ? 1800 : 3200;
-  const g = ctx.createGain();
-  const len = kick ? 0.18 : hat ? (pitch === 46 ? 0.25 : 0.05) : 0.14;
-  const peak = amp * (kick ? 2.2 : hat ? 0.35 : 0.8);
-  g.gain.setValueAtTime(peak, at);
-  g.gain.exponentialRampToValueAtTime(0.001, at + len);
-  src.connect(f).connect(g).connect(synthBus);
-  src.start(at, Math.random() * 0.5);
-  src.stop(at + len + 0.02);
-}
+// for the sound check (browser/verify/try_sound.mjs): the synth's state and its output
+window.__trySound = () => ({ loaded: !!synth, channels: { ...channelOf }, ctx, out: synthOut,
+  programs: data ? Object.fromEntries(data.parts.map((p) => [p.id, p.drums ? "drums" : p.program ?? PROGRAM[p.id] ?? 0])) : {} });
 
 // ---------- controls
 
@@ -277,7 +292,7 @@ function setSolo(id) {
   if (solo !== null) did.solo = true;
   if (ctx) {
     setGains();
-    if (playing) newSynthBus();
+    newSynthBus();
   }
   paintControls();
   drawRoll();
@@ -290,7 +305,7 @@ function setMode(m) {
   if (m === "midi") did.midi = true;
   if (ctx) {
     setGains();
-    if (playing) newSynthBus();
+    newSynthBus();
   }
   paintControls();
   drawRoll();

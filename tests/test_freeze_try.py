@@ -64,6 +64,18 @@ def test_freeze_writes_parts_notes_and_audio(tmp_path):
         assert (out / "try" / p["audio"]).is_file()
     assert parts["bass"]["notes"][0] == [0.5, 0.75, 40, 90]
     assert (out / "try" / data["mix"]).is_file()
+    assert parts["bass"]["program"] == 33                  # the page plays it on that GM program
+
+
+def test_freeze_copies_the_midi_player_and_its_soundfont(tmp_path):
+    out = tmp_path / "dist"
+    _load().freeze(_job(tmp_path), out, encode=False)
+    for f in ("vendor/design/sound/gm.sf3", "vendor/design/sound/NOTICE",
+              "vendor/spessasynth/spessasynth_lib.min.js", "vendor/spessasynth/spessasynth_processor.min.js",
+              "vendor/spessasynth/LICENSE"):
+        assert (out / f).is_file(), f
+    js = (out / "try" / "try.js").read_text()
+    assert "gm.sf3" in js and "createOscillator" not in js    # real instruments, no triangle synth
 
 
 def test_freeze_puts_notes_and_bars_on_the_stems_timeline(tmp_path):
