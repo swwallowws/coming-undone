@@ -60,10 +60,17 @@ history rewrite.
     `src/stemscribe/grid.py`, `src/stemscribe/tempo.py`,
     `src/stemscribe/cli.py`, `tests/test_pipeline_grid.py`.
   Naming a song and quoting note counts is not publishing it, so this does not
-  block. If you would rather not show the title or the folder layout, edit the
-  current files; the old text stays in history unless you rewrite it.
-- [ ] **Em dashes** remain in older text: `README.md` (23 lines), `SPEC.md` (9),
-  `src/stemscribe/cli.py` (1), `src/stemscribe/core.py` (1). Style only.
+  block. Kept as is (2026-09-30).
+- [x] **Em dashes** in prose removed (`README.md`, `SPEC.md`, the CLI's output;
+  2026-09-30).
+- [x] **Author identity** (`bengisuozaydin@gmail.com` on every commit) becomes
+  public: intended (decided 2026-09-30).
+- [x] **Old branch** `beat-grid` deleted on GitHub (merged); description and
+  website set (2026-09-30).
+- [x] **Re-audit of everything since 2026-09-26** (2026-09-30): still no secrets,
+  no personal paths, no audio or MIDI. New binaries: the design system's fonts
+  and General MIDI soundfont (`vendor/design/sound/`, GeneralUser GS, NOTICE
+  beside it) and basic-pitch's TF.js model (Apache-2.0).
 - [ ] **`SPEC.md`** is an internal working spec (acceptance test on a local
   file, notes for rearranged). Keep, trim, or drop before publishing.
 - [ ] **README mentions rearranged**, a private repo. Fine as prose; there is
