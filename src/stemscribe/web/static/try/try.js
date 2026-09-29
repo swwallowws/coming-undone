@@ -164,8 +164,8 @@ function ensureContext() {
 // the MIDI is silent until they are in, the audio stems play at once
 function loadSynth() {
   synthLoad ||= (async () => {
-    const lib = await import(new URL("spessasynth/spessasynth_lib.min.js", VENDOR).href);
-    await ctx.audioWorklet.addModule(new URL("spessasynth/spessasynth_processor.min.js", VENDOR).href);
+    const lib = await import(new URL("design/sound/spessasynth/spessasynth_lib.min.js", VENDOR).href);
+    await ctx.audioWorklet.addModule(new URL("design/sound/spessasynth/spessasynth_processor.min.js", VENDOR).href);
     const s = new lib.WorkletSynthesizer(ctx);
     s.connect(synthOut);
     const sf = await (await fetch(SOUNDFONT)).arrayBuffer();

@@ -43,7 +43,7 @@ where = ["src"]
 "stemscribe.web" = ["static/*", "static/js/*", "static/favicons/*", "static/vendor/design/*", "static/vendor/design/fonts/*",
                     "static/vendor/gradio-client/*", "static/vendor/browser-engine/*",
                     "static/vendor/browser-engine/basic-pitch/*", "static/vendor/design/sound/*",
-                    "static/vendor/spessasynth/*"]
+                    "static/vendor/design/sound/spessasynth/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

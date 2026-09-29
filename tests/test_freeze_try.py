@@ -71,8 +71,9 @@ def test_freeze_copies_the_midi_player_and_its_soundfont(tmp_path):
     out = tmp_path / "dist"
     _load().freeze(_job(tmp_path), out, encode=False)
     for f in ("vendor/design/sound/gm.sf3", "vendor/design/sound/NOTICE",
-              "vendor/spessasynth/spessasynth_lib.min.js", "vendor/spessasynth/spessasynth_processor.min.js",
-              "vendor/spessasynth/LICENSE"):
+              "vendor/design/sound/spessasynth/spessasynth_lib.min.js",
+              "vendor/design/sound/spessasynth/spessasynth_processor.min.js",
+              "vendor/design/sound/spessasynth/LICENSE"):
         assert (out / f).is_file(), f
     js = (out / "try" / "try.js").read_text()
     assert "gm.sf3" in js and "createOscillator" not in js    # real instruments, no triangle synth

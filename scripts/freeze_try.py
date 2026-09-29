@@ -8,8 +8,9 @@ manifest.json. <out-dir> gets a self-contained static site:
     <out-dir>/try/index.html, try.js, try.css   the page (from web/static/try)
     <out-dir>/try/data.json                      parts, notes, bar lines
     <out-dir>/try/stems/<id>.mp3, mix.mp3         128 kbps (ffmpeg)
-    <out-dir>/vendor/design/                     the design system and its GM soundfont
-    <out-dir>/vendor/spessasynth/                the synth that plays the MIDI with it
+    <out-dir>/vendor/design/                     the design system, its GM soundfont (sound/gm.sf3)
+                                                 and the synth that plays the MIDI with it
+                                                 (sound/spessasynth/)
 
 Serve <out-dir> and open /try/. Everything is put on the stems' timeline: a run
 that trimmed leading silence writes its MIDI on the original file's timeline,
@@ -98,10 +99,9 @@ def freeze(job_dir, out_dir, *, encode: bool = True, title: str | None = None,
     for f in (STATIC / "try").iterdir():
         if f.is_file():
             shutil.copy2(f, page / f.name)
-    # the design system, with its General MIDI soundfont (vendor/design/sound/gm.sf3),
-    # and spessasynth, which plays the parts' MIDI with it
+    # the design system, with its General MIDI soundfont (vendor/design/sound/gm.sf3)
+    # and spessasynth (vendor/design/sound/spessasynth/), which plays the parts' MIDI with it
     shutil.copytree(STATIC / "vendor" / "design", out / "vendor" / "design", dirs_exist_ok=True)
-    shutil.copytree(STATIC / "vendor" / "spessasynth", out / "vendor" / "spessasynth", dirs_exist_ok=True)
     shutil.copytree(STATIC / "favicons", out / "favicons", dirs_exist_ok=True)
 
     pm = pretty_midi.PrettyMIDI(str(mids[0]))

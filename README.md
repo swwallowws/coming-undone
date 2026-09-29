@@ -587,7 +587,7 @@ Every model dependency, stated explicitly:
 | In your browser: MuScriptor small int8 | MIT | CC-BY-NC 4.0, gated | no |
 | In your browser: onnxruntime-web, TF.js, basic-pitch, protobufjs (bundled) | MIT, Apache-2.0, Apache-2.0, BSD-3-Clause | basic-pitch Apache-2.0 | yes |
 
-| /try/ MIDI player: spessasynth (vendored, `vendor/spessasynth/`) | Apache-2.0 | none | yes |
+| /try/ MIDI player: spessasynth, the design system's shared build (`vendor/design/sound/spessasynth/`, synced with `design/sync.sh --sound`) | Apache-2.0 | none | yes |
 | /try/ MIDI sounds: `gm.sf3`, the design system's shared General MIDI soundfont (`vendor/design/sound/`, synced with `design/sync.sh --sound`) | none | GeneralUser GS License v2.0, S. Christian Collins (trimmed copy; `NOTICE` beside it) | yes |
 
 The studio page credits every model at its foot (the Models list), with these
