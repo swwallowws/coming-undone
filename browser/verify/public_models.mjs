@@ -19,6 +19,8 @@
 // --staged <dir>: before the upload. The model repo's URLs are answered from <dir>
 // (scripts/stage_models.py) inside Chrome, at the same paths; htdemucs still comes
 // from its real public URL, and the header checks cover it alone.
+// --site <dir>: check a staged site (scripts/deploy-web.sh --stage <dir>) instead of
+// web/static, opened under /coming-undone-web/ as on GitHub Pages.
 // Writes browser/verify/out/<tag>.json.
 
 import { createServer } from "node:http";
@@ -37,7 +39,9 @@ const clip = positional[0] || ref?.clip;
 if (!clip) { console.error("usage: node browser/verify/public_models.mjs <clip> (no --ref result to take the clip from)"); process.exit(2); }
 const port = +opt("port", "8011"), ep = opt("ep", ""), staged = opt("staged", null);
 const tag = opt("tag", `public-${staged ? "staged" : "live"}-${clip.split("/").pop().replace(/\.\w+$/, "")}-${ep || "auto"}`);
-const STATIC = here("../../src/stemscribe/web/static/");
+const site = opt("site", null);
+const STATIC = site ? normalize(join(site, "/")) : here("../../src/stemscribe/web/static/");
+const SUBPATH = site ? "/coming-undone-web" : "";
 const PUBLIC_ORIGIN = "https://swwallowws.github.io";      // web/server.py PUBLIC_ORIGINS
 
 // the page's own public models URL, so a pinned revision is what gets checked
@@ -101,6 +105,10 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/jav
                ".woff2": "font/woff2", ".sf3": "application/octet-stream", ".wasm": "application/wasm" };
 const server = createServer((req, res) => {
   let p = decodeURIComponent(new URL(req.url, "http://x").pathname);
+  if (SUBPATH) {
+    if (!p.startsWith(`${SUBPATH}/`)) { res.writeHead(404); res.end("not found"); return; }
+    p = p.slice(SUBPATH.length);
+  }
   if (p.endsWith("/")) p += "index.html";
   const f = normalize(join(STATIC, p));
   if (!f.startsWith(STATIC) || !existsSync(f) || statSync(f).isDirectory()) { res.writeHead(404); res.end("not found"); return; }
@@ -125,7 +133,7 @@ if (staged) {
     return route.fulfill({ status: 200, headers: { "access-control-allow-origin": "*", "content-type": MIME[extname(f)] || "application/octet-stream" }, body: readFileSync(f) });
   });
 }
-await page.goto(`http://localhost:${port}/?debug=1${ep ? `&ep=${ep}` : ""}`);
+await page.goto(`http://localhost:${port}${SUBPATH}/?debug=1${ep ? `&ep=${ep}` : ""}`);
 let turnedOn = true;
 try {
   await page.waitForFunction(() => { const b = document.querySelector('[data-engine="browser"]'); return b && !b.disabled; }, null, { timeout: 30000 });

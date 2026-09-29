@@ -417,7 +417,7 @@ def test_browser_models_mount_only_with_a_manifest(client, tmp_path):
 
 def test_page_offers_the_browser_engine_and_credits_its_models(client):
     page = client.get("/").text
-    assert 'data-engine="browser"' in page and 'browserEngine: "/vendor/browser-engine/engine.js"' in page
+    assert 'data-engine="browser"' in page and 'browserEngine: here("./vendor/browser-engine/engine.js")' in page
     assert "ADT_STR" in page and "CC BY-SA 4.0" in page
     assert "CC BY-NC 4.0" in page and "non-commercial" in page
     assert "muscriptor-small" in page

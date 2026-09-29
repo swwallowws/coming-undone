@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Coming Undone</title>
-<link rel="icon" href="/favicons/favicon-32.png" sizes="32x32" type="image/png">
-<link rel="icon" href="/favicons/favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/favicons/apple-touch-icon.png">
-<link rel="stylesheet" href="/vendor/design/tokens.css">
-<link rel="stylesheet" href="/vendor/design/playhead.css">
+<link rel="icon" href="./favicons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="./favicons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./favicons/apple-touch-icon.png">
+<link rel="stylesheet" href="./vendor/design/tokens.css">
+<link rel="stylesheet" href="./vendor/design/playhead.css">
 <script>
   // ?theme=paper|night pins the theme, like the demos; otherwise it follows the system
   try { const t = new URLSearchParams(location.search).get("theme");
@@ -397,11 +397,13 @@
 </div>
 
 <script type="module">
-import { EngineError, findLocal, localEngine, onlineEngine, onlineGpuSeconds, onlineRunsPerDay, ONLINE_BUDGET } from "/js/engines.js";
-import { seekable } from "/vendor/design/playhead.js";
+import { EngineError, findLocal, localEngine, onlineEngine, onlineGpuSeconds, onlineRunsPerDay, ONLINE_BUDGET } from "./js/engines.js";
+import { seekable } from "./vendor/design/playhead.js";
 
 // ---- config: every outside address the page uses, in one place
 const params = new URLSearchParams(location.search);
+// the page's own files, relative to it, so it also works under a subpath (GitHub Pages)
+const here = p => new URL(p, document.baseURI).href;
 const CONFIG = {
   // the Hugging Face Space behind "Online"; ?space=<id or URL> overrides it (a local Gradio)
   space: params.get("space") || "swwallowws/coming-undone",
@@ -412,7 +414,7 @@ const CONFIG = {
   // the contact form's endpoint (Formspree)
   contactEndpoint: "https://formspree.io/f/mrpbjkak",
   // Gradio's JavaScript client, vendored (vendor/gradio-client/VERSION)
-  gradioClient: "/vendor/gradio-client/browser.js",
+  gradioClient: here("./vendor/gradio-client/browser.js"),
   // "In your browser" in the switch; false hides it. It turns on when its models answer
   // (a models.json at browser.models, else at publicModels); otherwise it stays marked
   // as coming later.
@@ -423,11 +425,11 @@ const CONFIG = {
   publicModels: "https://huggingface.co/swwallowws/coming-undone-browser-models/resolve/89a917875e272bb492311624d7536b5e27604a64/",
   // the browser engine's bundle (browser/build.mjs) and its settings; ?models=<url>
   // points at another model folder, ?ep=webgpu|wasm forces a backend
-  browserEngine: "/vendor/browser-engine/engine.js",
+  browserEngine: here("./vendor/browser-engine/engine.js"),
   browser: {
-    models: params.get("models") || "/browser-models/",
+    models: params.get("models") || here("./browser-models/"),
     ortWasm: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/",
-    basicPitch: "/vendor/browser-engine/basic-pitch/model.json",
+    basicPitch: here("./vendor/browser-engine/basic-pitch/model.json"),
     ep: params.get("ep") || "auto",
   },
 };

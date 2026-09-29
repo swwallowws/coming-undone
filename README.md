@@ -250,6 +250,14 @@ CC-BY-NC): on the public page the choice shows switched off and points to Online
 This computer; served by `stemscribe-web --browser-models` it stays available. Until
 the repo exists the public page shows the engine as "later".
 
+The public page lives at https://swwallowws.github.io/coming-undone-web/, a built-only
+repo on GitHub Pages. `scripts/deploy-web.sh --stage DIR` copies the studio page and
+the /try/ demo (the frozen song in `try-dist/`, with the current try page code) into
+DIR; `--push CHECKOUT` does the same into a clone of `coming-undone-web`, commits and
+pushes. Every path in the page is relative, so it runs under that subpath.
+`node browser/verify/public_models.mjs --site DIR` runs the end-to-end check against a
+staged copy, opened under `/coming-undone-web/`.
+
 ```bash
 .venv/bin/python scripts/stage_models.py          # -> models-dist/ (README.md tracked, .onnx not)
 .venv/bin/python out/upload_models.py --dry-run   # the file list, no upload
