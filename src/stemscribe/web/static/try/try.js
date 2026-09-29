@@ -7,6 +7,7 @@
 import { demoShell } from "../vendor/design/demoshell.js";
 import { iconButton } from "../vendor/design/iconbutton.js";
 import { noteColor } from "../vendor/design/tokens.js";
+import { seekable } from "../vendor/design/playhead.js";
 
 const $ = (id) => document.getElementById(id);
 const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -66,6 +67,9 @@ const modes = {}; // part id -> "audio" | "midi"
 
 // playback starts 50 ms after the click, so clamp that lead-in to the start
 const songTime = () => (playing ? Math.max(pos, pos + (ctx.currentTime - t0)) : pos);
+// where the playhead is drawn: under the pointer while a drag moves it during playback
+let scrubAt = null;
+const headTime = () => scrubAt ?? songTime();
 const part = (id) => data.parts.find((p) => p.id === id);
 const midiOn = () => solo !== null && modes[solo] === "midi";
 
@@ -337,19 +341,53 @@ function startOver() {
   drawRoll();
 }
 
-$("wave").addEventListener("click", (e) => {
-  if (!data) return;
-  const r = $("wave").getBoundingClientRect();
-  const t = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1) * data.duration;
+// a click, tap or drag on the waveform or the roll moves the playhead there (design
+// playhead.js). Paused, the place moves with the pointer and Play starts from it.
+// Playing, the head follows the pointer and the sound moves once, on release: a seek
+// on every move would restart the stems and the notes over and over. The roll shows
+// four bars at a time: a drag on it maps across the page it started on (rollPage),
+// and that page holds still until the pointer is let go.
+let rollPage = null;
+function scrub(t) {
+  if (playing) scrubAt = t;
+  else pos = t;
+  paintTime();
+  drawWave();
+  drawRoll();
+}
+function seekTo(t) {
+  scrubAt = null;
   if (playing) {
     stopPlayback(t);
     startPlayback();
   } else {
-    pos = t;
-    paintTime();
-    drawWave();
-    drawRoll();
+    scrub(t);
   }
+}
+function endScrub() {
+  scrubAt = null;
+  rollPage = null;
+  paintTime();
+  drawWave();
+  drawRoll();
+}
+seekable($("wave"), {
+  duration: () => data.duration,
+  enabled: () => !!data,
+  onScrub: scrub,
+  onSeek: seekTo,
+  onCancel: endScrub,
+});
+seekable($("roll"), {
+  toTime: (x, r) => {
+    const [a, b] = (rollPage ??= view(headTime()));
+    const t = a + (Math.min(Math.max(x - r.left, 0), r.width) / r.width) * (b - a);
+    return Math.min(Math.max(t, 0, a), b - 1e-3, data.duration);
+  },
+  enabled: () => !!data && solo !== null && !$("roll").classList.contains("off"),
+  onScrub: scrub,
+  onSeek: (t) => { rollPage = null; seekTo(t); },
+  onCancel: endScrub,
 });
 
 // ---------- drawing (tokens are light-dark() pairs a canvas can't read: resolve them on an element)
@@ -396,7 +434,7 @@ function drawWave() {
   g.fillStyle = resolved("--line");
   g.fillRect(0, h / 2, w, 1);
   if (!peaks || !data) return;
-  const acc = resolved("--acc"), now = songTime(), cols = Math.floor(w / 3);
+  const acc = resolved("--acc"), now = headTime(), cols = Math.floor(w / 3);
   let top = 0;
   for (const p of peaks) top = Math.max(top, p);
   const scale = top > 0 ? 1 / top : 1;
@@ -430,7 +468,7 @@ function drawStem(cv) {
   const c = sizeCanvas(cv);
   if (!c) return;
   const { g, w, h } = c;
-  const pk = stemPeaks[solo], now = songTime();
+  const pk = stemPeaks[solo], now = headTime();
   g.fillStyle = resolved("--ground-2");
   g.fillRect(0, 0, w, h);
   const [a, b] = view(now), xs = w / (b - a), x = (t) => (t - a) * xs;
@@ -481,7 +519,7 @@ function drawRoll() {
   const c = sizeCanvas(cv);
   if (!c || !show) return;
   const { g, w, h } = c;
-  const p = part(solo), now = songTime();
+  const p = part(solo), now = headTime();
   const ground = toRgb("--ground-2"), band = toRgb("--band"), ink = toRgb("--ink"), acc = toRgb("--acc");
   g.fillStyle = rgbStr(ground);
   g.fillRect(0, 0, w, h);
@@ -523,7 +561,7 @@ function drawRoll() {
 }
 
 function paintTime() {
-  if (data) $("time").textContent = `${fmtT(songTime())} / ${fmtT(data.duration)}`;
+  if (data) $("time").textContent = `${fmtT(headTime())} / ${fmtT(data.duration)}`;
 }
 
 let lastWave = 0;

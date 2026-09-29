@@ -4,7 +4,8 @@
 // Serve a site frozen by scripts/freeze_try.py first. Checks that the General MIDI
 // soundfont loads, that every part sounds, and that the parts sound like different
 // instruments (bass low, drums broadband). Saves each part's recording as
-// browser/verify/out/try-<part>.webm to listen to.
+// browser/verify/out/try-<part>.webm to listen to. Last, drags on the waveform and
+// checks the playhead lands where it was let go.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { chromium } from "playwright-core";
@@ -89,6 +90,16 @@ const afterSwitch = await page.evaluate(async () => {
   out.disconnect(an);
   return +peak.toFixed(4);
 });
+// a drag on the waveform (design playhead.js) moves the playhead to where it is let go
+const secs = (s) => s.split(":").reduce((m, x) => m * 60 + Number(x), 0);
+const box = await page.locator("#wave").boundingBox();
+const y = box.y + box.height / 2;
+await page.mouse.move(box.x + box.width * 0.2, y);
+await page.mouse.down();
+await page.mouse.move(box.x + box.width * 0.6, y, { steps: 8 });
+await page.mouse.up();
+const [heard, total] = (await page.textContent("#time")).split(" / ").map(secs);
+const drag = { at: heard, want: +(0.6 * total).toFixed(1) };
 await browser.close();
 
 const checks = [];
@@ -107,6 +118,8 @@ if (results.drums && results.bass) check("the drums play the kit (energy above 4
   results.drums.highShare > 0.002 && results.drums.highShare > 10 * results.bass.highShare,
   `above 4 kHz: drums ${results.drums.highShare}, bass ${results.bass.highShare}`);
 check("switching back to audio silences the synth", quiet < 0.005, `peak ${quiet} a second after the switch`);
+check("a drag on the waveform moves the playhead", Math.abs(drag.at - drag.want) <= 2,
+  `at ${drag.at}s after a drag to ${drag.want}s`);
 check("no page errors", errors.length === 0, errors.join(" | "));
 console.log(JSON.stringify({ url, state, results }, null, 1));
 for (const c of checks) console.log(`${c.ok ? "ok  " : "FAIL"} ${c.name}${c.detail ? `: ${c.detail}` : ""}`);

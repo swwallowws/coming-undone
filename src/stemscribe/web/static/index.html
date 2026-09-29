@@ -8,6 +8,7 @@
 <link rel="icon" href="/favicons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/favicons/apple-touch-icon.png">
 <link rel="stylesheet" href="/vendor/design/tokens.css">
+<link rel="stylesheet" href="/vendor/design/playhead.css">
 <script>
   // ?theme=paper|night pins the theme, like the demos; otherwise it follows the system
   try { const t = new URLSearchParams(location.search).get("theme");
@@ -114,7 +115,7 @@
 
   /* results: the transcribed MIDI as a roll, one player, downloads at hand */
   .result-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
-  .roll-box { position: relative; height: 240px; border: var(--hairline); cursor: pointer; }
+  .roll-box { position: relative; height: 240px; border: var(--hairline); }
   #roll { display: block; width: 100%; height: 100%; }
   #roll-head { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--acc); pointer-events: none; }
   .legend { display: flex; gap: 16px; margin: 8px 0 0; font-size: 12px; color: var(--ink-mut); }
@@ -125,7 +126,7 @@
   .part-name a.filename { text-decoration: none; overflow-wrap: anywhere; }
   .part-name a.filename:hover { text-decoration: underline; }
   .part-name .mono { font-size: 11.5px; }
-  .part-roll { display: block; width: 100%; height: var(--lane-h); border: var(--hairline); cursor: pointer; }
+  .part-roll { display: block; width: 100%; height: var(--lane-h); border: var(--hairline); }
   #parts-head { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--acc); pointer-events: none; }
   .player { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
   .player .primary { min-width: 80px; }
@@ -397,6 +398,7 @@
 
 <script type="module">
 import { EngineError, findLocal, localEngine, onlineEngine, onlineGpuSeconds, onlineRunsPerDay, ONLINE_BUDGET } from "/js/engines.js";
+import { seekable } from "/vendor/design/playhead.js";
 
 // ---- config: every outside address the page uses, in one place
 const params = new URLSearchParams(location.search);
@@ -1102,7 +1104,7 @@ function buildParts(run) {
     const cv = document.createElement("canvas");
     cv.className = "part-roll";
     cv.setAttribute("aria-label", `${p.name}: ${n} ${p.drum ? "hits" : "notes"}`);
-    cv.onclick = e => seekAt(e, cv);
+    seekable(cv, seekOpts);
     p.canvas = cv;
     box.append(name, cv);
   }
@@ -1159,25 +1161,35 @@ choiceHooks.view = () => {
   on ? drawParts() : drawRoll();
 };
 
+// where the playhead is drawn: under the pointer while a drag moves it during playback
+let scrubAt = null;
 function followAudio() {
   const a = $("pl-audio");
   if (roll) {
-    const frac = Math.min(1, (a.currentTime || 0) / span());
+    const t = scrubAt ?? (a.currentTime || 0), frac = Math.min(1, t / span());
     $("roll-head").style.left = `${frac * 100}%`;
     placePartsHead(frac);
-    $("pl-time").textContent = `${fmtT(a.currentTime || 0)} / ${fmtT(span())}`;
+    $("pl-time").textContent = `${fmtT(t)} / ${fmtT(span())}`;
     if (!a.paused) partsView() ? drawParts() : drawRoll();
   }
   requestAnimationFrame(followAudio);
 }
-function seekAt(e, el) {
-  if (!roll) return;
-  const r = el.getBoundingClientRect(), a = $("pl-audio");
-  a.currentTime = ((e.clientX - r.left) / r.width) * span();
-  if (a.paused) a.play();
-  partsView() ? drawParts() : drawRoll();
-}
-$("roll-box").onclick = e => seekAt(e, $("roll-box"));
+// a click, tap or drag on the roll or a part's lane moves the playhead there (design
+// playhead.js). Paused, the place moves with the pointer and Play starts from it.
+// Playing, the head follows the pointer and the audio moves once, on release.
+const redraw = () => partsView() ? drawParts() : drawRoll();
+const seekOpts = {
+  duration: () => span(),
+  enabled: () => !!roll,
+  onScrub: t => {
+    const a = $("pl-audio");
+    if (a.paused) { a.currentTime = t; redraw(); }
+    else scrubAt = t;
+  },
+  onSeek: t => { scrubAt = null; $("pl-audio").currentTime = t; redraw(); },
+  onCancel: () => { scrubAt = null; },
+};
+seekable($("roll-box"), seekOpts);
 addEventListener("resize", drawRoll);
 addEventListener("resize", drawParts);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawRoll);
