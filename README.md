@@ -12,7 +12,7 @@ Built to be rearranged's transcription front-end; useful standalone for any
 producer workflow.
 
 ```
-audio in (mp3/wav/m4a) — a file, or a URL
+audio in (mp3/wav/m4a): a file, or a URL
   └─ 0. fetch         yt-dlp, when handed a URL (provenance → manifest)
   └─ 0. prepare       decode → strip metadata → section → trim silence
   └─ 1. separate      demucs htdemucs → drums / bass / other / vocals
@@ -121,7 +121,7 @@ res.source.url        # where it came from
 ```
 
 **Default keeps the native codec, not mp3.** YouTube serves Opus/AAC, and
-`prepare` decodes to wav before demucs sees anything — so transcoding to mp3 in
+`prepare` decodes to wav before demucs sees anything, so transcoding to mp3 in
 between is a second lossy generation that costs quality and buys nothing. Use
 `--audio-format mp3` when you want a file to keep.
 
@@ -147,8 +147,8 @@ Fetched audio lands in `out/source/` (`--no-keep-source` discards it), and the
 URL, title, uploader and duration go into `manifest.json` under `source`. That
 matters more than it looks: stemscribe hashes its input, but a hash tells you
 *which* file, never *whose*. Since rearranged is meant to ship commercially,
-being able to answer "where did this come from?" months later — for material
-that may be someone else's recording — is worth the two lines it costs. The same
+being able to answer "where did this come from?" months later (for material
+that may be someone else's recording) is worth the two lines it costs. The same
 diligence that keeps MuScriptor's CC-BY-NC weights out of the commercial path
 applies to the audio going in.
 
@@ -307,7 +307,7 @@ push to the Space.
 | `manifest.json` | input hash, params, backend, per-track note counts, quantization-error stats, the beat grid (tempo, bar lines, per-track latency and fit), drum backend, fallbacks, timings, warnings |
 
 Track names (`melody`, `bass`, `comping`) are the contract downstream consumers
-read — `melody` is always the vocal line. Renaming them breaks rearranged.
+read: `melody` is always the vocal line. Renaming them breaks rearranged.
 
 ## Backends
 
@@ -380,13 +380,13 @@ Raw transcriptions of reverby comping come out as walls of sustained
 overlapping notes, and downstream style engines then read the texture as "pad"
 instead of "stabs". Per track, cleanup:
 
-1. **Velocity floor** — drop notes below velocity 15 (transcription noise).
-2. **De-overlap** — same-pitch overlapping notes: trim the earlier note's end to
+1. **Velocity floor**: drop notes below velocity 15 (transcription noise).
+2. **De-overlap**: same-pitch overlapping notes: trim the earlier note's end to
    the next note's start.
-3. **Duration cap** — notes longer than N beats (default 2) that have *other*
+3. **Duration cap**: notes longer than N beats (default 2) that have *other*
    notes re-onsetting during their sustain get trimmed to the next onset. Long
    notes over silence are left alone; they're probably real.
-4. **Report** — before/after note counts and median duration, into the manifest.
+4. **Report**: before/after note counts and median duration, into the manifest.
 
 Toggle with `cleanup=False` / `--no-cleanup`, or tune via `CleanupParams`
 (`--max-duration-beats`, `--velocity-floor`, `--no-de-overlap`). The duration
@@ -394,19 +394,19 @@ cap is measured in beats against the detected tempo, so it means the same
 musical thing at any BPM.
 
 **How much does it actually do?** On `koprualti` via per-stem basic-pitch:
-almost nothing — 1731 → 1727 notes, median duration unchanged. That is the
+almost nothing: 1731 → 1727 notes, median duration unchanged. That is the
 correct result, not a bug. The "wall of sustained notes" this pass was written
 for comes from transcribing a *dense* source; per-stem transcription on
 separated audio (which this pipeline mandates) mostly prevents it upstream.
 Measured on that material: median 0.257s, polyphony 1.68, only 8 of 1731 notes
 over the 1s cap, and zero notes under velocity 15.
 
-So the pass earns its keep defensively — for muscriptor, for reverby material,
-for backends that smear — and the defaults are deliberately *not* tuned harder
+So the pass earns its keep defensively (for muscriptor, for reverby material,
+for backends that smear), and the defaults are deliberately *not* tuned harder
 just to move the number. Trimming aggressively enough to drop the median would
 delete real notes.
 
-The smear is real, though — it's just on the other side of a threshold. Running
+The smear is real, though: it's just on the other side of a threshold. Running
 basic-pitch with `frame_threshold=0.05` on the same bass stem yields a median
 note duration of **4.3 seconds** and zero silence: exactly the wall of sustained
 overlapping notes the spec describes. Don't go there.
@@ -419,23 +419,23 @@ output that's too *staccato*: measured on koprualti, bass came out **68%
 silence**, melody 50%.
 
 `legato=True` / `--legato` closes those gaps by extending each note to the next
-onset, like Ableton's Span (legato) or its Legato command. Off by default — it
+onset, like Ableton's Span (legato) or its Legato command. Off by default: it
 pushes a track toward "pad", the exact reading the rest of cleanup exists to
 prevent.
 
 **It only closes gaps under `legato_max_gap_beats` (default 0.25, a 16th).**
 That guard is the whole design: an unconditional stretch swallows rests and
 phrase endings, turning silence someone played on purpose into sustain nobody
-did. A gap it won't close is information — it's telling you the note is *really*
+did. A gap it won't close is information: it's telling you the note is *really*
 that short, and the fix is upstream, not here.
 
 Don't reach for `frame_threshold` to get legato. It changes which notes are
-detected, not just their length — at 0.1 the bass stem explodes from 411 notes
+detected, not just their length: at 0.1 the bass stem explodes from 411 notes
 to 10,594. Extending note ends is deterministic: it invents nothing and loses
 nothing.
 
 `silence_ratio_before/after` in the manifest is the number that tracks this.
-Median duration can't see it — shortening every note and spreading the same
+Median duration can't see it. Shortening every note and spreading the same
 notes further apart move the median identically.
 
 ## Tempo
@@ -453,7 +453,7 @@ over a full song. The fit gets within ~0.01%.
 
 Embedding the tempo **never moves a note**. `pretty_midi` stores note times in
 seconds; tempo only decides where the bar lines fall. That's also why fixing an
-octave error is instant and lossless — see the web UI's alternates, or
+octave error is instant and lossless: see the web UI's alternates, or
 `POST /api/jobs/{id}/tempo`.
 
 Beat trackers confuse half and double time, so `res.tempo.candidates` carries
@@ -565,7 +565,7 @@ leading/trailing silence. All optional; all recorded in the manifest.
 
 **The timing contract:** any offset introduced here is added back at the end, so
 MIDI note times always refer to the *original* file you passed in. Trim 4.2s of
-dead air and the first note still reports at 4.2s — because in your file, it is.
+dead air and the first note still reports at 4.2s, because in your file, it is.
 `res.prepared.offset` is that number.
 
 `--start` / `--duration` are for fast iteration (a 20s section runs in ~14s vs
@@ -579,24 +579,24 @@ rearranged; this is a convenience, not a takeover.
   Don't "simplify" it back to `demucs.separate`.
 - **ffmpeg `amix`**: `normalize=0` isn't in every build. `mixdown.py` uses
   `amix=inputs=N,volume=N`, which is the portable way to sum rather than average.
-- **basic-pitch**: the Python API (`predict`), not the CLI — the CLI pays the
+- **basic-pitch**: the Python API (`predict`), not the CLI: the CLI pays the
   import cost per call.
 - **Summing stems clips.** drums+bass+other overshoots 0dBFS where the original
   mix was already near full scale (measured 1.19 peak on real material).
   `mixdown.py` ends the chain with `alimiter`; `limit=0` opts out.
 - **yt-dlp's `js_runtimes` takes a dict, not a list.** The CLI's `--js-runtimes`
   accepts a list, but the Python API wants `{runtime: {config}}` and raises
-  `ValueError` otherwise. Pass `{}` as the config, not `None` — validation
+  `ValueError` otherwise. Pass `{}` as the config, not `None`: validation
   accepts `None`, then something downstream calls `.get()` on it.
 - **`alimiter=level` defaults to true**, which auto-levels the limited signal
   back up to 0dBFS and silently undoes `limit`. It must be `level=disabled` or
   the limiter does nothing you can measure. An mp3 of a dense limited mix still
-  decodes ~1.1 peak regardless — lossy reconstruction overshoots its source, and
+  decodes ~1.1 peak regardless: lossy reconstruction overshoots its source, and
   that's normal; use `--instrumental-format wav` if you need provable headroom.
 - **numpy leaks into the manifest.** `pretty_midi` returns `instrument.program`
   as `int64`, and `statistics.median` over note times returns `float64`; both
   are unserializable. `core._jsonable` cleans the manifest as a data structure,
-  not just on write — `res.manifest` is a public surface that other code
+  not just on write: `res.manifest` is a public surface that other code
   serializes with its own serializer.
 - mp3 input is fine; wav is not required.
 

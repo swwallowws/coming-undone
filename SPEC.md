@@ -1,4 +1,4 @@
-# stemscribe — song in, stems + multi-track MIDI out
+# stemscribe: song in, stems + multi-track MIDI out
 
 A small Python library + CLI that takes an audio file (with or without vocals),
 separates it into stems, and transcribes it into a labeled multi-track MIDI.
@@ -90,7 +90,7 @@ stemscribe song.mp3 -o out/ --backend basic-pitch --no-vocals-melody --midi-only
 > rearranged's shipping build MUST set it (or pass `backend="basic-pitch"`).
 
 Registry design: `BACKENDS = {"basic-pitch": fn, "muscriptor": fn}` where each
-fn takes `(stem_wav_path, out_mid_path)` — copy the pattern from
+fn takes `(stem_wav_path, out_mid_path)`: copy the pattern from
 `~/Playground/rearranged/test-harness/transcribe.py` (4-backend scaffold;
 Klangio/YourMT3+ can slot in later, do NOT build them now).
 
@@ -101,7 +101,7 @@ without the `[drums]` extra it is skipped with a warning, as before.)
 ## Cleanup pass (important, learned the hard way)
 
 Raw transcriptions (esp. of reverby comping) come out as WALLS OF SUSTAINED
-OVERLAPPING NOTES — downstream style engines then read the texture as "pad"
+OVERLAPPING NOTES: downstream style engines then read the texture as "pad"
 instead of "stabs". The cleanup pass, per track:
 
 1. De-overlap: same-pitch overlapping notes → trim previous note's end to the
@@ -113,13 +113,13 @@ instead of "stabs". The cleanup pass, per track:
 
 Make cleanup togglable and parameterized; defaults tuned on real material.
 
-## Known gotchas (all hit in genre-bending — do not rediscover)
+## Known gotchas (all hit in genre-bending, do not rediscover)
 
 - **demucs save crashes** on torchaudio ≥2.9: `ModuleNotFoundError: torchcodec`.
   Do NOT use `demucs.separate` CLI's save path. Use the API:
   `demucs.pretrained.get_model('htdemucs')` + `demucs.apply.apply_model`,
   then save with `soundfile.write`. Working reference:
-  the `sep.py` pattern — model.cpu(), AudioFile(...).read(streams=0,
+  the `sep.py` pattern: model.cpu(), AudioFile(...).read(streams=0,
   samplerate=model.samplerate, channels=model.audio_channels), normalize by
   ref mean/std, `apply_model(..., split=True, overlap=0.25)`, un-normalize,
   `sf.write(path, src.cpu().numpy().T, model.samplerate)`.
@@ -130,7 +130,7 @@ Make cleanup togglable and parameterized; defaults tuned on real material.
 - MuScriptor weights are ~2GB, downloaded on first run; slow. Cache is HF's.
 - mp3 in via ffmpeg/audioread is fine; don't require wav input.
 
-## Licenses (matters — rearranged ships commercially later)
+## Licenses (matters: rearranged ships commercially later)
 
 demucs code MIT, but **its weights are research-only** (corrected 2026-09-25, see
 the README's Licenses), basic-pitch Apache ✅, soundfile/pretty_midi ✅, ADT_STR CC BY-SA 4.0.
@@ -144,14 +144,14 @@ Run on `~/Playground/rearranged/inputs/koprualti.mp3`:
 - `song.mid` has ≥3 named tracks incl. "melody" (from vocals)
 - cleanup reduces median note duration on the "other" track vs raw
 - manifest sane (counts, params, timings)
-Compare (informally) with `~/Playground/rearranged/phase0/koprualti_style.mid`
-— the new output should be at least as clean.
+Compare (informally) with `~/Playground/rearranged/phase0/koprualti_style.mid`:
+the new output should be at least as clean.
 
 ## Non-goals for v1 (extension points only)
 
 - Chord labels (BTC/BACHI), section detection: leave hooks, don't build. (The
   beat/downbeat grid and drum transcription moved in scope on 2026-09-25.)
-- Melody identification inside instrumental tracks (skyline etc.) — rearranged
+- Melody identification inside instrumental tracks (skyline etc.): rearranged
   keeps that logic; here melody comes only from the vocal stem.
 - Tempo changes within a song (the grid is one constant tempo).
 - GPU/ROCm tuning.
@@ -160,5 +160,5 @@ Compare (informally) with `~/Playground/rearranged/phase0/koprualti_style.mid`
 
 rearranged will replace: its scratchpad `sep.py`, the ffmpeg clip-mixing
 commands, and its per-stem basic-pitch calls with `stemscribe.process()`.
-Section cutting (by seconds) stays in rearranged — stemscribe processes
+Section cutting (by seconds) stays in rearranged; stemscribe processes
 whole songs.

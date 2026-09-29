@@ -302,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if res.source:
-        who = f" — {res.source.uploader}" if res.source.uploader else ""
+        who = f" · {res.source.uploader}" if res.source.uploader else ""
         print(f"\nsource     {res.source.title or res.source.url}{who}")
 
     t = res.tempo
