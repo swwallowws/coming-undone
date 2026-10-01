@@ -4,12 +4,12 @@ simply split.
 
 Formerly stemscribe; the code, package and commands keep that name.
 
-Song in, stems + labeled multi-track MIDI out.
+A song in, its parts out, each one written down as a named MIDI track.
 
-Takes an audio file (with or without vocals), separates it into stems, and
-transcribes it into a multi-track MIDI with named tracks and GM programs.
-Built to be rearranged's transcription front-end; useful standalone for any
-producer workflow.
+Takes an audio file (with or without vocals), separates it into its parts
+(stems), and writes them down as a multi-track MIDI file with named tracks and
+General MIDI instruments. Built to be Rearranged's transcription front-end;
+useful on its own in any producer workflow.
 
 ```
 audio in (mp3/wav/m4a): a file, or a URL
