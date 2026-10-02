@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Stage the public page for swwallowws/coming-undone-web (GitHub Pages, served at
-# https://swwallowws.github.io/coming-undone-web/).
+# Stage the public page. CI (.github/workflows/ci.yml) stages it on every push to
+# main and publishes it to this repo's GitHub Pages, served at
+# https://swwallowws.github.io/coming-undone/ (the old coming-undone-web address redirects).
 #   scripts/deploy-web.sh --stage DIR       stage into DIR (no git)
-#   scripts/deploy-web.sh --push CHECKOUT   stage into a clone of coming-undone-web, commit, push
-# Pushing publishes the site: only with Bengisu's explicit go.
+#   scripts/deploy-web.sh --push CHECKOUT   stage into a checkout, commit, push (old manual route)
 #
 # The site is static: the studio page (web/static), whose engines are Online (the
 # Hugging Face Space), This computer (localhost:8002, when it runs) and In your

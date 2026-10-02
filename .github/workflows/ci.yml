@@ -1,10 +1,24 @@
 name: CI
 
-# The tests use no model weights (nothing downloads); torch is the CPU build.
+# Tests, the README's links, then the website: staged from this commit by
+# scripts/deploy-web.sh (the studio page plus the guided demo on its frozen song,
+# tracked in try-dist/try/) and published to GitHub Pages on every push to main,
+# so the live site never drifts from the code. The tests use no model weights
+# (nothing downloads); torch is the CPU build.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -22,3 +36,48 @@ jobs:
       - run: pip install 'torch==2.8.0' 'torchaudio==2.8.0' --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -e '.[web,fetch,dev]'
       - run: pytest -q
+
+  readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every link in the READMEs answers
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --no-progress --exclude-loopback --max-retries 3 --accept 200,206,429 README.md deploy/README.md
+
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage the site
+        run: bash scripts/deploy-web.sh --stage _site
+      - name: Stamp the build (the showcase compares it with its pictures)
+        run: bash scripts/stamp-site.sh _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [test, readme, site]
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+      - name: The live site answers (studio, demo, its song, sounds)
+        env:
+          BASE: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          for path in "" try/ try/data.json try/mix.mp3 vendor/design/sound/gm.sf3 version.json; do
+            ok=""
+            for attempt in 1 2 3 4 5 6; do
+              if curl -fsS -o /dev/null "${BASE}${path}"; then ok=1; break; fi
+              sleep 10
+            done
+            [ -n "$ok" ] || { echo "not live: ${BASE}${path}"; exit 1; }
+            echo "live: ${BASE}${path}"
+          done
