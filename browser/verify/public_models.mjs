@@ -20,7 +20,7 @@
 // (scripts/stage_models.py) inside Chrome, at the same paths; htdemucs still comes
 // from its real public URL, and the header checks cover it alone.
 // --site <dir>: check a staged site (scripts/deploy-web.sh --stage <dir>) instead of
-// web/static, opened under /coming-undone-web/ as on GitHub Pages.
+// web/static, opened under /coming-undone/ as on GitHub Pages.
 // Writes browser/verify/out/<tag>.json.
 
 import { createServer } from "node:http";
@@ -41,7 +41,7 @@ const port = +opt("port", "8011"), ep = opt("ep", ""), staged = opt("staged", nu
 const tag = opt("tag", `public-${staged ? "staged" : "live"}-${clip.split("/").pop().replace(/\.\w+$/, "")}-${ep || "auto"}`);
 const site = opt("site", null);
 const STATIC = site ? normalize(join(site, "/")) : here("../../src/stemscribe/web/static/");
-const SUBPATH = site ? "/coming-undone-web" : "";
+const SUBPATH = site ? "/coming-undone" : "";
 const PUBLIC_ORIGIN = "https://swwallowws.github.io";      // web/server.py PUBLIC_ORIGINS
 
 // the page's own public models URL, so a pinned revision is what gets checked

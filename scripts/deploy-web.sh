@@ -8,9 +8,9 @@
 # The site is static: the studio page (web/static), whose engines are Online (the
 # Hugging Face Space), This computer (localhost:8002, when it runs) and In your
 # browser (models from the public Hugging Face repo, CONFIG.publicModels), plus the
-# guided demo at /try/: the frozen song in try-dist/ (scripts/freeze_try.py, not
-# tracked) with the current try page code on top. Every path is relative, so it
-# works under the /coming-undone-web/ subpath.
+# guided demo at /try/: the frozen song in try-dist/ (scripts/freeze_try.py; its
+# data is tracked) with the current try page code on top. Every path is relative,
+# so it works under the /coming-undone/ subpath.
 set -euo pipefail
 
 mode="${1:-}"; target="${2:-}"

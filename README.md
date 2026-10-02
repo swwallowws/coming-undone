@@ -30,7 +30,7 @@ audio in (mp3/wav/m4a): a file, or a URL
 
 ## Run it on this computer (for the website)
 
-The website (https://swwallowws.github.io/coming-undone-web/) runs a song Online or In
+The website (https://swwallowws.github.io/coming-undone/) runs a song Online or In
 your browser. "This computer" runs it here instead: full quality, whole songs, and the
 audio never leaves the machine. It needs Python 3.11, `ffmpeg` and a few GB of disk:
 torch, and the models, which download on the first run (MuScriptor alone is about 2 GB).
@@ -275,13 +275,13 @@ CC-BY-NC): on the public page the choice shows switched off and points to Online
 This computer; served by `stemscribe-web --browser-models` it stays available. Until
 the repo exists the public page shows the engine as "later".
 
-The public page lives at https://swwallowws.github.io/coming-undone-web/, a built-only
-repo on GitHub Pages. `scripts/deploy-web.sh --stage DIR` copies the studio page and
-the /try/ demo (the frozen song in `try-dist/`, with the current try page code) into
-DIR; `--push CHECKOUT` does the same into a clone of `coming-undone-web`, commits and
-pushes. Every path in the page is relative, so it runs under that subpath.
+The public page lives at https://swwallowws.github.io/coming-undone/, this repo's
+GitHub Pages: CI stages it on every push to `main` and publishes it.
+`scripts/deploy-web.sh --stage DIR` copies the studio page and the /try/ demo (the
+frozen song's data, tracked in `try-dist/try/`, with the current try page code) into
+DIR. Every path in the page is relative, so it runs under any subpath.
 `node browser/verify/public_models.mjs --site DIR` runs the end-to-end check against a
-staged copy, opened under `/coming-undone-web/`.
+staged copy.
 
 ```bash
 .venv/bin/python scripts/stage_models.py          # -> models-dist/ (README.md tracked, .onnx not)
