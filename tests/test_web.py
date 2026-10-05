@@ -43,7 +43,7 @@ def test_page_uses_the_shared_design_system(client):
     assert 'data-category="transcribe"' in page and "/vendor/design/tokens.css" in page
     css = client.get("/vendor/design/tokens.css")
     assert css.status_code == 200 and "--acc" in css.text
-    assert client.get("/vendor/design/fonts/Archivo.woff2").status_code == 200
+    assert client.get("/vendor/design/fonts/InterTight.woff2").status_code == 200
 
 
 def test_page_links_a_favicon_that_resolves(client):
