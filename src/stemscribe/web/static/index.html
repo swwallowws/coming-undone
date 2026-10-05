@@ -9,6 +9,7 @@
 <link rel="apple-touch-icon" href="./favicons/apple-touch-icon.png">
 <link rel="stylesheet" href="./vendor/design/tokens.css">
 <link rel="stylesheet" href="./vendor/design/playhead.css">
+<link rel="stylesheet" href="./vendor/design/controls.css">
 <script>
   // ?theme=paper|night pins the theme, like the demos; otherwise it follows the system
   try { const t = new URLSearchParams(location.search).get("theme");
@@ -20,6 +21,13 @@
   body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--font-sans);
          font-size: 14px; line-height: 1.45; font-variant-numeric: tabular-nums; }
   header.bar { display: flex; gap: 16px; align-items: baseline; padding: 16px 24px; border-bottom: var(--hairline); flex-wrap: wrap; }
+  /* where it runs, as in Rearranged: the switch at the header's end, a bar under the header saying where */
+  header.bar .runs { margin-left: auto; display: inline-flex; gap: 8px; align-items: baseline; color: var(--ink-mut); }
+  .runs-bar { display: flex; gap: 6px 12px; align-items: baseline; flex-wrap: wrap; padding: 6px 24px;
+              border-bottom: var(--hairline); color: var(--ink-mut); font-size: 13px; }
+  .runs-bar a { color: var(--ink-mut); white-space: nowrap; }
+  .runs-bar a:hover { color: var(--ink); }
+  .runs-bar .budget:empty { display: none; }
   header.bar h1 { margin: 0; font-size: 22px; font-weight: var(--head-weight); font-stretch: var(--head-stretch); letter-spacing: var(--head-tracking); }
   header.bar h1 span { color: var(--acc); }
   .ver { color: var(--ink-mut); font-family: var(--font-mono); font-size: 12px; }
@@ -31,25 +39,14 @@
   /* sections: hairline rules, no cards */
   .panel { border-top: var(--hairline); padding: 16px 0 24px; }
   .panel:first-child { border-top: 0; padding-top: 0; }
-  h2 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 12px; }
-
-  #drop { border: 1px dashed var(--line); padding: 32px 20px; text-align: center; cursor: pointer; background: var(--ground-2); }
-  #drop:hover, #drop.over { border-color: var(--acc); }
-  #drop.has-file { border-style: solid; text-align: left; padding: 14px 16px; }
-  .drop-main { font-weight: 700; }
-  .drop-sub { color: var(--ink-mut); font-size: 13px; margin-top: 4px; }
+  h2.ds-label { margin: 0 0 12px; }
   .filename { font-family: var(--font-mono); font-size: 13px; color: var(--acc); }
 
   .or { display: flex; align-items: center; gap: 12px; color: var(--ink-mut); font-size: 12px; margin: 16px 0 8px; }
   .or::before, .or::after { content: ""; flex: 1; border-top: var(--hairline); }
   .row { display: flex; gap: 8px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
 
-  button, a.dlbtn { font: inherit; color: var(--ink); background: var(--ground-2); border: var(--hairline);
-    border-radius: 0; padding: 6px 12px; cursor: pointer; text-decoration: none; display: inline-block; }
-  button:hover:not(:disabled), a.dlbtn:hover { border-color: var(--ink); }
-  button:disabled { opacity: .45; cursor: default; }
-  .primary, a.dlbtn.main { background: var(--acc); color: var(--ground); border-color: var(--acc); font-weight: 700; }
-  .ghost { color: var(--ink-mut); }
+  /* buttons, choices, chips and the drop zone are the design's (controls.css) */
 
   input[type=text], input[type=number], select { width: 100%; font: inherit; color: var(--ink); background: var(--ground-2);
     border: var(--hairline); border-radius: 0; padding: 6px 8px; }
@@ -74,9 +71,8 @@
   .bpm-unit { color: var(--ink-mut); font-size: 13px; }
   .pill { font-family: var(--font-mono); font-size: 11px; padding: 1px 6px; border: var(--hairline); color: var(--ink-mut); }
   .alts { margin-top: 16px; }
-  .alt-btns { display: inline-flex; flex-wrap: wrap; margin-top: 8px; }
-  .alt-btns .alt { margin-right: -1px; font-family: var(--font-mono); font-size: 12.5px; }
-  .alt.active { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+  .alt-btns { margin-top: 8px; }
+  .alt-btns .alt { font-family: var(--font-mono); }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th { text-align: left; color: var(--ink-mut); font-weight: 400; font-size: 12px; padding: 0 8px 6px 0; }
@@ -95,23 +91,10 @@
   .spacer { flex: 1; }
   .form-grid { display: grid; grid-template-columns: 8.5rem 1fr; gap: 18px 16px; align-items: baseline; margin-top: 28px; }
   .form-grid > .label { color: var(--ink-mut); font-size: 13px; padding-top: 6px; }
-  .choice { display: inline-flex; flex-wrap: wrap; }
-  .choice button { margin-right: -1px; }
-  .choice button.on { background: var(--ink); color: var(--ground); border-color: var(--ink); }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip input { position: absolute; opacity: 0; pointer-events: none; }
-  .chip span { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border: var(--hairline);
-    background: var(--ground-2); cursor: pointer; font-size: 13px; color: var(--ink-mut); }
-  .chip span::before { content: ""; width: 7px; height: 7px; border: 1px solid var(--ink-mut); }
-  .chip span:hover { border-color: var(--ink); }
-  .chip input:checked + span { color: var(--ink); border-color: var(--ink); }
-  .chip input:checked + span::before { background: var(--acc); border-color: var(--acc); }
-  .chip input:focus-visible + span { outline: 2px solid var(--acc); outline-offset: 1px; }
   .chip.off, .dep-nums.off { opacity: .35; pointer-events: none; }
   .nums { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 10px; }
   .num { font-size: 13px; color: var(--ink-mut); display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
   .num input[type=number] { width: 5.5em; font-family: var(--font-mono); font-size: 12.5px; padding: 3px 6px; }
-  button.small { padding: 3px 8px; font-size: 12px; }
 
   /* results: the transcribed MIDI as a roll, one player, downloads at hand */
   .result-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -140,17 +123,8 @@
   .wave-head, .wave-foot { display: flex; align-items: baseline; gap: 8px; }
   .wave-foot { font-size: 12px; margin-top: 6px; min-height: 22px; align-items: center; }
   #wave { display: block; width: 100%; height: 96px; margin-top: 10px; cursor: crosshair; touch-action: none; }
-  /* where the run happens: the Runs: switch, a line saying where, and the contact form */
-  .runs { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-  .runs .label { color: var(--ink-mut); font-size: 13px; }
-  .choice button:disabled { opacity: 1; color: var(--ink-mut); border-style: dashed; }
   .soon { font-family: var(--font-mono); font-size: 11px; margin-left: 6px; }
-  .where { color: var(--ink-mut); font-size: 13px; margin: 0 0 22px; max-width: 62ch; }
-  .where a { color: var(--ink-mut); white-space: nowrap; }
-  .where a:hover { color: var(--ink); }
-  .where .budget { display: block; margin-top: 4px; }
-  .where .budget:empty { display: none; }
-  #contact { border-left: 2px solid var(--acc); padding: 2px 0 4px 14px; margin: -8px 0 24px; max-width: 34rem; }
+  #contact { border-left: 2px solid var(--acc); padding: 2px 0 4px 14px; margin: 0 0 24px; max-width: 34rem; }
   #contact p { margin: 0 0 12px; }
   #contact form { display: grid; gap: 10px; }
   #contact label.f { margin-bottom: 2px; }
@@ -174,6 +148,8 @@
   }
   @media (max-width: 600px) {
     header.bar { padding: 12px 16px; gap: 12px; }
+    header.bar .runs { margin-left: 0; flex-wrap: wrap; }
+    .runs-bar { padding: 6px 16px; }
     .wrap { padding: 16px 16px 64px; }
   }
 </style>
@@ -183,19 +159,16 @@
   <h1>Coming Undone<span>.</span></h1>
   <span class="ver" id="ver"></span>
   <span class="tagline">simply split.</span>
+  <span class="runs" role="group" aria-label="Where the run happens">Runs:
+    <span class="choice ds-choice small" id="engine-choice"><button data-engine="online">Online</button><button data-engine="local" class="hidden">This computer</button><button data-engine="browser" class="hidden" disabled title="coming later">In your browser<span class="soon" id="browser-soon">later</span></button></span>
+  </span>
 </header>
+<div class="runs-bar"><span id="where-text"></span>
+  <span id="online-budget" class="budget"></span>
+  <a href="#" id="look-local" class="hidden">Running Coming Undone on this computer? Look for it.</a>
+  <span class="spacer"></span><a href="#" id="contact-open" aria-expanded="false" aria-controls="contact">Get in touch</a></div>
 <div class="wrap">
   <div class="panel" id="form">
-    <div class="runs" role="group" aria-label="Where the run happens">
-      <span class="label">Runs:</span>
-      <span class="choice" id="engine-choice">
-        <button data-engine="online">Online</button><button data-engine="local" class="hidden">This computer</button><button data-engine="browser" class="hidden" disabled title="coming later">In your browser<span class="soon" id="browser-soon">later</span></button>
-      </span>
-    </div>
-    <p class="where"><span id="where-text"></span>
-      <span id="online-budget" class="budget"></span>
-      <a href="#" id="look-local" class="hidden">Running Coming Undone on this computer? Look for it.</a>
-      <a href="#" id="contact-open" aria-expanded="false" aria-controls="contact">Get in touch</a></p>
     <div id="contact" class="hidden">
       <p>Want it faster, or on your own songs at scale? I'd love to hear what you're making.</p>
       <form id="contact-form" novalidate>
@@ -204,55 +177,55 @@
         <div><label class="f" for="c-making">What are you making?</label><textarea id="c-making" name="message"></textarea></div>
         <input type="hidden" name="_subject" value="Coming Undone: new message">
         <div class="trap" aria-hidden="true"><label>Leave this empty <input type="text" name="_gotcha" tabindex="-1" autocomplete="off"></label></div>
-        <div class="row" style="margin-top:2px"><button class="primary" type="submit" id="c-send">Send</button>
+        <div class="row" style="margin-top:2px"><button class="ds-button primary" type="submit" id="c-send">Send</button>
           <span class="hint" id="c-status" role="status"></span></div>
       </form>
       <p id="c-thanks" class="hidden">Thank you, I'll write back soon.</p>
     </div>
-    <div id="drop" tabindex="0" role="button" aria-label="Choose an audio file">
-      <div class="drop-main">Drop an audio file, or click to choose</div>
-      <div class="drop-sub">mp3, wav, m4a, flac</div>
+    <div id="drop" class="ds-drop" tabindex="0" role="button" aria-label="Choose an audio file">
+      <div class="ds-drop-main">Drop an audio file, or click to choose</div>
+      <div class="ds-drop-sub">mp3, wav, m4a, flac</div>
     </div>
     <div id="wave-box" class="hidden">
       <div class="wave-head">
         <span class="filename" id="fname"></span><span class="mono mut" id="fmeta"></span>
-        <span class="spacer"></span><button class="ghost small" id="change">change file</button>
+        <span class="spacer"></span><button class="ds-button ghost small" id="change">change file</button>
       </div>
       <canvas id="wave" height="96"></canvas>
       <div class="wave-foot mono mut"><span id="sel-text">whole song · drag across the waveform to transcribe only a section</span>
-        <span class="spacer"></span><button class="ghost small hidden" id="sel-clear">whole song</button></div>
+        <span class="spacer"></span><button class="ds-button ghost small hidden" id="sel-clear">whole song</button></div>
     </div>
     <input type="file" id="file" accept="audio/*,.mp3,.wav,.m4a,.flac,.aiff" class="hidden">
     <div class="or" id="or"><span>or paste a link</span></div>
-    <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=..." aria-label="Link to audio">
+    <input type="text" id="url" class="ds-field" placeholder="https://www.youtube.com/watch?v=..." aria-label="Link to audio">
 
     <div class="form-grid">
       <span class="label">Parts</span>
-      <div><span class="choice" data-for="model">
+      <div><span class="choice ds-choice"data-for="model">
           <button data-v="htdemucs">4 parts</button><button data-v="htdemucs_6s">6 parts</button></span>
         <div class="hint" id="model-hint"></div></div>
       <input type="hidden" id="model" value="htdemucs">
 
       <span class="label">Notes</span>
-      <div><span class="choice" data-for="backend" id="backend-choice"></span>
+      <div><span class="choice ds-choice"data-for="backend" id="backend-choice"></span>
         <div class="hint" id="backend-hint"></div></div>
       <input type="hidden" id="backend" value="muscriptor">
 
       <span class="label">Tracks</span>
-      <div class="chips">
-        <label class="chip"><input type="checkbox" id="vocals" checked><span>vocals as melody</span></label>
-        <label class="chip"><input type="checkbox" id="monovocals"><span>one voice melody</span></label>
-        <label class="chip"><input type="checkbox" id="monobass"><span>one note bass</span></label>
+      <div class="chips ds-chips">
+        <label class="chip ds-chip"><input type="checkbox" id="vocals" checked><span>vocals as melody</span></label>
+        <label class="chip ds-chip"><input type="checkbox" id="monovocals"><span>one voice melody</span></label>
+        <label class="chip ds-chip"><input type="checkbox" id="monobass"><span>one note bass</span></label>
       </div>
 
       <span class="label">Cleanup</span>
       <div>
-        <div class="chips">
-          <label class="chip"><input type="checkbox" id="cleanup" checked><span>clean up notes</span></label>
-          <label class="chip dep"><input type="checkbox" id="deoverlap" checked><span>de-overlap</span></label>
-          <label class="chip dep"><input type="checkbox" id="trim" checked><span>trim silence</span></label>
-          <label class="chip dep"><input type="checkbox" id="legato"><span>legato</span></label>
-          <label class="chip"><input type="checkbox" id="strip" checked><span>strip metadata</span></label>
+        <div class="chips ds-chips">
+          <label class="chip ds-chip"><input type="checkbox" id="cleanup" checked><span>clean up notes</span></label>
+          <label class="chip ds-chip dep"><input type="checkbox" id="deoverlap" checked><span>de-overlap</span></label>
+          <label class="chip ds-chip dep"><input type="checkbox" id="trim" checked><span>trim silence</span></label>
+          <label class="chip ds-chip dep"><input type="checkbox" id="legato"><span>legato</span></label>
+          <label class="chip ds-chip"><input type="checkbox" id="strip" checked><span>strip metadata</span></label>
         </div>
         <div class="nums dep-nums">
           <label class="num">notes at most <input type="number" id="maxbeats" value="2" step="0.5" min="0"> beats</label>
@@ -266,14 +239,14 @@
         <span class="mut">empty: detected from the audio</span></label>
 
       <span class="label">Time signature</span>
-      <div><span class="choice" data-for="meter">
+      <div><span class="choice ds-choice"data-for="meter">
           <button data-v="4/4">4/4</button><button data-v="3/4">3/4</button><button data-v="6/8">6/8</button><button data-v="9/8:2+2+2+3">9/8 (2+2+2+3)</button><button data-v="12/8">12/8</button></span>
         <div class="hint" id="meter-hint"></div></div>
       <input type="hidden" id="meter" value="4/4">
 
       <span class="label">Grid</span>
       <div>
-        <div class="chips"><label class="chip"><input type="checkbox" id="snap"><span>snap notes to the grid</span></label></div>
+        <div class="chips ds-chips"><label class="chip ds-chip"><input type="checkbox" id="snap"><span>snap notes to the grid</span></label></div>
         <div class="nums">
           <label class="num">bar one on beat <input type="number" id="downbeat" placeholder="auto" step="1" min="1" max="4">
             <span class="mut">empty: guessed</span></label>
@@ -290,22 +263,22 @@
       </div>
 
       <span class="label link-only hidden">Link audio</span>
-      <div class="link-only hidden"><span class="choice" data-for="audiofmt">
+      <div class="link-only hidden"><span class="choice ds-choice"data-for="audiofmt">
           <button data-v="native">original</button><button data-v="mp3">mp3 192k</button></span>
         <div class="hint">original skips a second lossy encode</div></div>
       <input type="hidden" id="audiofmt" value="native">
 
       <span></span>
       <div class="row" style="margin-top:8px">
-        <button class="primary" id="go" disabled>Split and write down</button>
-        <button class="ghost hidden" id="again">New file</button>
+        <button class="ds-button primary" id="go" disabled>Split and write down</button>
+        <button class="ds-button ghost hidden" id="again">New file</button>
       </div>
     </div>
   </div>
 
   <!-- progress -->
   <div class="panel hidden" id="prog-panel">
-    <h2><span class="spin" id="spin"></span>Progress</h2>
+    <h2 class="ds-label"><span class="spin" id="spin"></span>Progress</h2>
     <div id="log"></div>
   </div>
 
@@ -320,8 +293,8 @@
   <div id="results" class="hidden">
     <div class="panel">
       <div class="result-head">
-        <h2 style="margin:0">Result</h2>
-        <span class="choice" data-for="view" id="view-choice"><button data-v="together">together</button><button data-v="parts">by part</button></span>
+        <h2 class="ds-label" style="margin:0">Result</h2>
+        <span class="choice ds-choice"data-for="view" id="view-choice"><button data-v="together">together</button><button data-v="parts">by part</button></span>
         <span class="spacer"></span><span class="dl" id="dl"></span>
       </div>
       <input type="hidden" id="view" value="together">
@@ -329,8 +302,8 @@
       <div class="legend mono" id="legend"></div>
       <div id="parts" class="hidden"><div id="parts-head"></div></div>
       <div class="player">
-        <button class="primary" id="pl-play">Play</button>
-        <span class="choice" id="pl-stems"></span>
+        <button class="ds-button primary" id="pl-play">Play</button>
+        <span class="choice ds-choice"id="pl-stems"></span>
         <span class="mono mut" id="pl-time"></span>
       </div>
       <audio id="pl-audio" preload="auto"></audio>
@@ -338,14 +311,14 @@
     </div>
 
     <div class="panel hidden" id="src-panel">
-      <h2>Source</h2>
+      <h2 class="ds-label">Source</h2>
       <div id="src-title" style="font-weight:700"></div>
       <div id="src-meta" class="hint"></div>
       <div class="note">Kept in manifest.json with the output.</div>
     </div>
 
     <div class="panel">
-      <h2>Tempo</h2>
+      <h2 class="ds-label">Tempo</h2>
       <div class="tempo-hero">
         <span class="bpm" id="bpm">–</span><span class="bpm-unit" id="bpm-unit">BPM</span>
         <span class="pill" id="tempo-src"></span>
@@ -353,21 +326,21 @@
       </div>
       <div class="alts hidden" id="bar-box">
         <div class="hint" id="bar-info"></div>
-        <div class="alt-btns">
-          <button class="alt" id="bar-earlier">&larr; one a beat earlier</button>
-          <button class="alt" id="bar-later">one a beat later &rarr;</button>
+        <div class="alt-btns ds-choice small">
+          <button id="bar-earlier">&larr; one a beat earlier</button>
+          <button id="bar-later">one a beat later &rarr;</button>
         </div>
       </div>
       <div class="alts hidden" id="alts">
         <div class="hint">
           Half or double time? Pick another tempo: notes never move.
         </div>
-        <div class="alt-btns" id="alt-btns"></div>
+        <div class="alt-btns ds-choice small" id="alt-btns"></div>
       </div>
     </div>
 
     <div class="panel">
-      <h2>Tracks</h2>
+      <h2 class="ds-label">Tracks</h2>
       <div id="warns"></div>
       <table>
         <thead><tr><th>Track</th><th>Notes</th><th>Median dur</th><th>Silence</th><th>Polyphony</th><th>Cleanup</th></tr></thead>
@@ -379,7 +352,7 @@
 
   <!-- the models behind every engine, and their licences -->
   <footer class="credits" id="credits">
-    <h2>Models</h2>
+    <h2 class="ds-label">Models</h2>
     <ul>
       <li>Parts: <a href="https://github.com/facebookresearch/demucs" target="_blank" rel="noreferrer noopener">htdemucs</a>
         (Défossez et al., Meta). Research-only weights. In your browser: the ONNX export by
@@ -889,25 +862,25 @@ function fail(e) {
       "Need more online runs? Get in touch.";
     if (engines.browser) {
       const b = document.createElement("button");
-      b.textContent = "Run in your browser";
+      b.className = "ds-button"; b.textContent = "Run in your browser";
       b.onclick = () => { selectEngine("browser"); remember("browser"); $("go").click(); };
       acts.appendChild(b);
     }
     if (engines.local) {
       const b = document.createElement("button");
-      b.className = "primary"; b.textContent = "Run on this computer";
+      b.className = "ds-button primary"; b.textContent = "Run on this computer";
       b.onclick = () => { selectEngine("local"); remember("local"); $("go").click(); };
       acts.appendChild(b);
     } else {
       const b = document.createElement("button");
-      b.textContent = "Look for it on this computer";
+      b.className = "ds-button"; b.textContent = "Look for it on this computer";
       b.onclick = () => lookForLocal(true).then(() => { if (engines.local) { selectEngine("local"); $("err-panel").classList.add("hidden"); } });
       acts.appendChild(b);
     }
     // More online runs would cost real GPU time: ask who wants them (a paid tier
     // later, once the non-commercial models are swapped out).
     const more = document.createElement("button");
-    more.textContent = "Ask for more online runs";
+    more.className = "ds-button"; more.textContent = "Ask for more online runs";
     more.onclick = () => {
       if ($("contact").classList.contains("hidden")) $("contact-open").click();
       if (!$("c-making").value) $("c-making").value = "I'd like more online runs of Coming Undone. What I'm working on: ";
@@ -975,14 +948,14 @@ function render(run) {
     const box = $("alt-btns"); box.innerHTML = "";
     [{ bpm: t.bpm, ratio: 1 }, ...alts].forEach(c => {
       const b = document.createElement("button");
-      b.className = "alt" + (c.ratio === 1 ? " active" : "");
+      b.className = "alt" + (c.ratio === 1 ? " on" : "");
       b.textContent = `${c.bpm.toFixed(2)}${c.ratio === 0.5 ? "  ½×" : c.ratio === 2 ? "  2×" : c.ratio === 1 ? "" : `  ${c.ratio.toFixed(2)}×`}`;
       b.onclick = async () => {
         await run.restamp(c.bpm);
         $("bpm").textContent = c.bpm.toFixed(2);
         $("tempo-src").textContent = "you set this";
-        [...box.children].forEach(x => x.classList.remove("active"));
-        b.classList.add("active");
+        [...box.children].forEach(x => x.classList.remove("on"));
+        b.classList.add("on");
       };
       box.appendChild(b);
     });
@@ -1042,7 +1015,7 @@ function render(run) {
   const link = (label, path, main) => {
     if (!path) return;
     const a = document.createElement("a");
-    a.className = "dlbtn" + (main ? " main" : "");
+    a.className = "ds-button" + (main ? " primary" : "");
     a.href = url(path); a.download = ""; a.textContent = label;
     dl.appendChild(a);
   };

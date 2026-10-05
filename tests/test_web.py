@@ -385,6 +385,19 @@ def test_page_has_the_runs_switch_and_one_config(client):
     assert "—" not in page
 
 
+def test_page_shares_the_studio_header_and_the_design_controls(client):
+    page = client.get("/").text
+    assert 'href="./vendor/design/controls.css"' in page
+    # as in Rearranged: the Runs switch at the header's end, a bar under it saying where
+    header = page.split('<header class="bar">', 1)[1].split("</header>", 1)[0]
+    assert "Runs:" in header and 'id="engine-choice"' in header
+    bar = page.split('<div class="runs-bar">', 1)[1].split("</div>", 1)[0]
+    assert 'id="where-text"' in bar and 'id="contact-open"' in bar
+    for c in ('class="choice ds-choice', 'class="chip ds-chip', 'class="ds-drop"', 'class="ds-button primary"', 'class="ds-label"'):
+        assert c in page, c
+    assert "background: var(--ink); color: var(--ground)" not in page   # the chosen option is the accent
+
+
 def test_page_online_limit_matches_the_space():
     import re
     import sys

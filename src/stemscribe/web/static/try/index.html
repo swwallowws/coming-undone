@@ -21,6 +21,7 @@
     <link rel="stylesheet" href="../vendor/design/iconbutton.css" />
     <link rel="stylesheet" href="../vendor/design/demoshell.css" />
     <link rel="stylesheet" href="../vendor/design/playhead.css" />
+    <link rel="stylesheet" href="../vendor/design/controls.css" />
     <link rel="stylesheet" href="try.css" />
   </head>
   <body>
@@ -35,11 +36,11 @@
         <canvas id="wave" class="try-wave" aria-label="Waveform of the full mix; click or drag to move the playhead"></canvas>
         <div class="try-row">
           <span class="try-label" id="parts-label">Parts</span>
-          <span id="parts" class="try-parts" role="group" aria-labelledby="parts-label"></span>
+          <span id="parts" class="try-parts ds-choice" role="group" aria-labelledby="parts-label"></span>
         </div>
         <div class="try-row">
           <span class="try-label" id="mode-label">Hear as</span>
-          <span class="try-switch" role="group" aria-labelledby="mode-label">
+          <span class="try-switch ds-choice" role="group" aria-labelledby="mode-label">
             <button id="mode-audio" type="button" aria-pressed="true" disabled>Audio</button>
             <button id="mode-midi" type="button" aria-pressed="false" disabled>MIDI</button>
           </span>
