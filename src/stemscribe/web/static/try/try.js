@@ -15,12 +15,12 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
 const shell = demoShell($("demo"), {
   product: "Coming Undone",
-  title: "Split a recording and write down every note.",
+  title: "split a recording and write down every note.",
   intro: "One song, processed ahead of time.",
   steps: [
-    { id: "play", label: "Press Play" },
-    { id: "solo", label: "Solo a part" },
-    { id: "midi", label: "Switch it to MIDI" },
+    { id: "play", label: "press play" },
+    { id: "solo", label: "solo a part" },
+    { id: "midi", label: "switch it to MIDI" },
   ],
   // The rail's title stays a plain "Try it out!"; the way to the full studio comes at
   // the end of the tour, as in every demo.
