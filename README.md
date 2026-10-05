@@ -11,6 +11,12 @@ Takes an audio file (with or without vocals), separates it into its parts
 General MIDI instruments. Built to be Rearranged's transcription front-end;
 useful on its own in any producer workflow.
 
+## In pictures
+
+<a href="media/loop-paper.mp4"><img src="media/full-paper.png" alt="Coming Undone: a song split into parts, each written as MIDI" width="720"></a>
+
+Files to share: [loop, Paper](media/loop-paper.mp4) · [loop, Night](media/loop-night.mp4) · [still, Paper](media/full-paper.png) · [still, Night](media/full-night.png)
+
 ```
 audio in (mp3/wav/m4a): a file, or a URL
   └─ 0. fetch         yt-dlp, when handed a URL (provenance → manifest)
