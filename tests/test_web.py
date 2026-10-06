@@ -377,7 +377,7 @@ def test_downbeat_past_the_meter_is_refused(client, tmp_path, monkeypatch):
 
 def test_page_has_the_runs_switch_and_one_config(client):
     page = client.get("/").text
-    assert "Runs:" in page and 'data-engine="online"' in page and 'data-engine="local"' in page
+    assert "Engine:" in page and 'data-engine="online"' in page and 'data-engine="local"' in page
     assert 'space: params.get("space") || "swwallowws/coming-undone"' in page
     assert page.count("formspree.io") == 1                  # the endpoint lives in CONFIG only
     for field in ('name="email"', 'type="email"', "required", 'name="_gotcha"', 'name="_subject"'):
@@ -388,9 +388,11 @@ def test_page_has_the_runs_switch_and_one_config(client):
 def test_page_shares_the_studio_header_and_the_design_controls(client):
     page = client.get("/").text
     assert 'href="./vendor/design/controls.css"' in page
-    # as in Rearranged: the Runs switch at the header's end, a bar under it saying where
-    header = page.split('<header class="bar">', 1)[1].split("</header>", 1)[0]
-    assert "Runs:" in header and 'id="engine-choice"' in header
+    # the design's header, as in every product: the wordmark alone (no tagline), the Engine
+    # switch at its end, a bar under it saying where
+    header = page.split('<header class="ds-header">', 1)[1].split("</header>", 1)[0]
+    assert 'class="ds-wordmark"' in header and "simply" not in header
+    assert "Engine:" in header and 'id="engine-choice"' in header and "Runs:" not in page
     bar = page.split('<div class="runs-bar">', 1)[1].split("</div>", 1)[0]
     assert 'id="where-text"' in bar and 'id="contact-open"' in bar
     for c in ('class="choice ds-choice', 'class="chip ds-chip', 'class="ds-drop"', 'class="ds-button primary"', 'class="ds-label"'):

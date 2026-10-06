@@ -134,14 +134,14 @@ function buildParts() {
   box.innerHTML = "";
   const all = document.createElement("button");
   all.type = "button";
-  all.textContent = "all";
+  all.textContent = "All";
   all.dataset.part = "";
   box.append(all);
   for (const p of data.parts) {
     modes[p.id] = "audio";
     const b = document.createElement("button");
     b.type = "button";
-    b.textContent = p.name;
+    b.textContent = p.name[0].toUpperCase() + p.name.slice(1);   // controls in sentence case
     b.dataset.part = p.id;
     box.append(b);
   }

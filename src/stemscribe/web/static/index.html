@@ -21,19 +21,15 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--font-sans);
          font-size: 14px; line-height: 1.45; font-variant-numeric: tabular-nums; }
-  header.bar { display: flex; gap: 16px; align-items: baseline; padding: 16px 24px; border-bottom: var(--hairline); flex-wrap: wrap; }
-  /* where it runs, as in Rearranged: the switch at the header's end, a bar under the header saying where */
-  header.bar .runs { margin-left: auto; display: inline-flex; gap: 8px; align-items: baseline; color: var(--ink-mut); }
+  /* the header is the design's (.ds-header); the Engine switch sits at its end, a bar under it says where */
+  .ds-header .runs { display: inline-flex; gap: 8px; align-items: center; color: var(--ink-mut); }
   .runs-bar { display: flex; gap: 6px 12px; align-items: baseline; flex-wrap: wrap; padding: 6px 24px;
               border-bottom: var(--hairline); color: var(--ink-mut); font-size: 13px; }
   .runs-bar a { color: var(--ink-mut); white-space: nowrap; }
   .runs-bar a:hover { color: var(--ink); }
   .runs-bar .budget:empty { display: none; }
-  header.bar h1 { margin: 0; font-size: 22px; font-weight: var(--head-weight); font-stretch: var(--head-stretch); letter-spacing: var(--head-tracking); }
-  header.bar h1 span { color: var(--acc); }
   .ver { color: var(--ink-mut); font-family: var(--font-mono); font-size: 12px; }
-  .ver:empty { display: none; }   /* no version known: no extra gap before the tagline */
-  .tagline { color: var(--ink-mut); }
+  .ver:empty { display: none; }
   .wrap { max-width: 900px; margin: 0 auto; padding: 24px 24px 80px; }
   .mono { font-family: var(--font-mono); font-size: 12.5px; }
   .hidden { display: none !important; }
@@ -149,19 +145,17 @@
     .form-grid > .label { padding-top: 14px; }
   }
   @media (max-width: 600px) {
-    header.bar { padding: 12px 16px; gap: 12px; }
-    header.bar .runs { margin-left: 0; flex-wrap: wrap; }
+    .ds-header .runs { margin-left: 0; flex-wrap: wrap; }
     .runs-bar { padding: 6px 16px; }
     .wrap { padding: 16px 16px 64px; }
   }
 </style>
 </head>
 <body>
-<header class="bar">
-  <h1>Coming Undone<span>.</span></h1>
+<header class="ds-header">
+  <h1 class="ds-wordmark">Coming Undone<span class="dot">.</span></h1>
   <span class="ver" id="ver"></span>
-  <span class="tagline">simply split.</span>
-  <span class="runs" role="group" aria-label="Where the run happens">Runs:
+  <span class="runs end" role="group" aria-label="Where the run happens">Engine:
     <span class="choice ds-choice small" id="engine-choice"><button data-engine="online">Online</button><button data-engine="local" class="hidden">This computer</button><button data-engine="browser" class="hidden" disabled title="coming later">In your browser<span class="soon" id="browser-soon">later</span></button></span>
   </span>
 </header>
@@ -172,11 +166,11 @@
 <div class="wrap">
   <div class="panel" id="form">
     <div id="contact" class="hidden">
-      <p>Want it faster, or on your own songs at scale? I'd love to hear what you're making.</p>
+      <p>Say hi, ask anything, or show me what you made.</p>
       <form id="contact-form" novalidate>
         <div><label class="f" for="c-name">Name</label><input type="text" id="c-name" name="name" autocomplete="name"></div>
         <div><label class="f" for="c-email">Email</label><input type="email" id="c-email" name="email" autocomplete="email" required></div>
-        <div><label class="f" for="c-making">What are you making?</label><textarea id="c-making" name="message"></textarea></div>
+        <div><label class="f" for="c-making">Message</label><textarea id="c-making" name="message"></textarea></div>
         <input type="hidden" name="_subject" value="Coming Undone: new message">
         <div class="trap" aria-hidden="true"><label>Leave this empty <input type="text" name="_gotcha" tabindex="-1" autocomplete="off"></label></div>
         <div class="row" style="margin-top:2px"><button class="ds-button primary" type="submit" id="c-send">Send</button>
@@ -191,83 +185,83 @@
     <div id="wave-box" class="hidden">
       <div class="wave-head">
         <span class="filename" id="fname"></span><span class="mono mut" id="fmeta"></span>
-        <span class="spacer"></span><button class="ds-button ghost small" id="change">change file</button>
+        <span class="spacer"></span><button class="ds-button ghost small" id="change">Change file</button>
       </div>
       <canvas id="wave" height="96"></canvas>
-      <div class="wave-foot mono mut"><span id="sel-text">whole song · drag across the waveform to transcribe only a section</span>
-        <span class="spacer"></span><button class="ds-button ghost small hidden" id="sel-clear">whole song</button></div>
+      <div class="wave-foot mono mut"><span id="sel-text">Whole song · drag across the waveform to transcribe only a section</span>
+        <span class="spacer"></span><button class="ds-button ghost small hidden" id="sel-clear">Whole song</button></div>
     </div>
     <input type="file" id="file" accept="audio/*,.mp3,.wav,.m4a,.flac,.aiff" class="hidden">
-    <div class="or" id="or"><span>or paste a link</span></div>
+    <div class="or" id="or"><span>Or paste a link</span></div>
     <input type="text" id="url" class="ds-field" placeholder="https://www.youtube.com/watch?v=..." aria-label="Link to audio">
 
     <div class="form-grid">
       <span class="label">Parts</span>
-      <div><span class="choice ds-choice"data-for="model">
+      <div><span class="choice ds-choice" data-for="model">
           <button data-v="htdemucs">4 parts</button><button data-v="htdemucs_6s">6 parts</button></span>
         <div class="hint" id="model-hint"></div></div>
       <input type="hidden" id="model" value="htdemucs">
 
       <span class="label">Notes</span>
-      <div><span class="choice ds-choice"data-for="backend" id="backend-choice"></span>
+      <div><span class="choice ds-choice" data-for="backend" id="backend-choice"></span>
         <div class="hint" id="backend-hint"></div></div>
       <input type="hidden" id="backend" value="muscriptor">
 
       <span class="label">Tracks</span>
       <div class="chips ds-chips">
-        <label class="chip ds-chip"><input type="checkbox" id="vocals" checked><span>vocals as melody</span></label>
-        <label class="chip ds-chip"><input type="checkbox" id="monovocals"><span>one voice melody</span></label>
-        <label class="chip ds-chip"><input type="checkbox" id="monobass"><span>one note bass</span></label>
+        <label class="chip ds-chip"><input type="checkbox" id="vocals" checked><span>Vocals as melody</span></label>
+        <label class="chip ds-chip"><input type="checkbox" id="monovocals"><span>One voice melody</span></label>
+        <label class="chip ds-chip"><input type="checkbox" id="monobass"><span>One note bass</span></label>
       </div>
 
       <span class="label">Cleanup</span>
       <div>
         <div class="chips ds-chips">
-          <label class="chip ds-chip"><input type="checkbox" id="cleanup" checked><span>clean up notes</span></label>
-          <label class="chip ds-chip dep"><input type="checkbox" id="deoverlap" checked><span>de-overlap</span></label>
-          <label class="chip ds-chip dep"><input type="checkbox" id="trim" checked><span>trim silence</span></label>
-          <label class="chip ds-chip dep"><input type="checkbox" id="legato"><span>legato</span></label>
-          <label class="chip ds-chip"><input type="checkbox" id="strip" checked><span>strip metadata</span></label>
+          <label class="chip ds-chip"><input type="checkbox" id="cleanup" checked><span>Clean up notes</span></label>
+          <label class="chip ds-chip dep"><input type="checkbox" id="deoverlap" checked><span>De-overlap</span></label>
+          <label class="chip ds-chip dep"><input type="checkbox" id="trim" checked><span>Trim silence</span></label>
+          <label class="chip ds-chip dep"><input type="checkbox" id="legato"><span>Legato</span></label>
+          <label class="chip ds-chip"><input type="checkbox" id="strip" checked><span>Strip metadata</span></label>
         </div>
         <div class="nums dep-nums">
-          <label class="num">notes at most <input type="number" id="maxbeats" value="2" step="0.5" min="0"> beats</label>
-          <label class="num">quieter than <input type="number" id="velfloor" value="15" step="1" min="0" max="127"> dropped</label>
-          <label class="num" id="legatogap-row">legato closes gaps up to <input type="number" id="legatogap" value="0.25" step="0.25" min="0"> beats</label>
+          <label class="num">Notes at most <input type="number" id="maxbeats" value="2" step="0.5" min="0"> beats</label>
+          <label class="num">Drop notes quieter than <input type="number" id="velfloor" value="15" step="1" min="0" max="127"></label>
+          <label class="num" id="legatogap-row">Legato closes gaps up to <input type="number" id="legatogap" value="0.25" step="0.25" min="0"> beats</label>
         </div>
       </div>
 
       <span class="label">Tempo</span>
       <label class="num"><input type="number" id="tempo" placeholder="auto" step="0.01" min="20" max="400"> <span id="tempo-unit">BPM</span>
-        <span class="mut">empty: detected from the audio</span></label>
+        <span class="mut">Empty: detected from the audio</span></label>
 
       <span class="label">Time signature</span>
-      <div><span class="choice ds-choice"data-for="meter">
+      <div><span class="choice ds-choice" data-for="meter">
           <button data-v="4/4">4/4</button><button data-v="3/4">3/4</button><button data-v="6/8">6/8</button><button data-v="9/8:2+2+2+3">9/8 (2+2+2+3)</button><button data-v="12/8">12/8</button></span>
         <div class="hint" id="meter-hint"></div></div>
       <input type="hidden" id="meter" value="4/4">
 
       <span class="label">Grid</span>
       <div>
-        <div class="chips ds-chips"><label class="chip ds-chip"><input type="checkbox" id="snap"><span>snap notes to the grid</span></label></div>
+        <div class="chips ds-chips"><label class="chip ds-chip"><input type="checkbox" id="snap"><span>Snap notes to the grid</span></label></div>
         <div class="nums">
-          <label class="num">bar one on beat <input type="number" id="downbeat" placeholder="auto" step="1" min="1" max="4">
-            <span class="mut">empty: guessed</span></label>
+          <label class="num">Bar one on beat <input type="number" id="downbeat" placeholder="auto" step="1" min="1" max="4">
+            <span class="mut">Empty: guessed</span></label>
         </div>
       </div>
 
       <span class="label">Section</span>
       <div>
         <div class="nums" style="margin:0">
-          <label class="num">from <input type="number" id="start" placeholder="0" step="0.1" min="0"> s</label>
+          <label class="num">From <input type="number" id="start" placeholder="0" step="0.1" min="0"> s</label>
           <label class="num">for <input type="number" id="duration" placeholder="all" step="0.1" min="0"> s</label>
         </div>
         <div class="hint" id="section-hint"></div>
       </div>
 
       <span class="label link-only hidden">Link audio</span>
-      <div class="link-only hidden"><span class="choice ds-choice"data-for="audiofmt">
-          <button data-v="native">original</button><button data-v="mp3">mp3 192k</button></span>
-        <div class="hint">original skips a second lossy encode</div></div>
+      <div class="link-only hidden"><span class="choice ds-choice" data-for="audiofmt">
+          <button data-v="native">Original</button><button data-v="mp3">MP3, 192k</button></span>
+        <div class="hint">Original skips a second lossy encode</div></div>
       <input type="hidden" id="audiofmt" value="native">
 
       <span></span>
@@ -286,7 +280,7 @@
 
   <!-- error -->
   <div class="panel hidden" id="err-panel">
-    <h2 id="err-title">Failed</h2>
+    <h2 class="ds-label" id="err-title">Failed</h2>
     <div class="err-box" id="err"></div>
     <div class="err-actions" id="err-actions"></div>
   </div>
@@ -296,7 +290,7 @@
     <div class="panel">
       <div class="result-head">
         <h2 class="ds-label" style="margin:0">Result</h2>
-        <span class="choice ds-choice"data-for="view" id="view-choice"><button data-v="together">together</button><button data-v="parts">by part</button></span>
+        <span class="choice ds-choice" data-for="view" id="view-choice"><button data-v="together">Together</button><button data-v="parts">By part</button></span>
         <span class="spacer"></span><span class="dl" id="dl"></span>
       </div>
       <input type="hidden" id="view" value="together">
@@ -305,7 +299,7 @@
       <div id="parts" class="hidden"><div id="parts-head"></div></div>
       <div class="player">
         <button id="pl-play" type="button" data-icon="play" data-toggle aria-label="Play"></button>
-        <span class="choice ds-choice"id="pl-stems"></span>
+        <span class="choice ds-choice" id="pl-stems"></span>
         <span class="mono mut" id="pl-time"></span>
       </div>
       <audio id="pl-audio" preload="auto"></audio>
@@ -329,8 +323,8 @@
       <div class="alts hidden" id="bar-box">
         <div class="hint" id="bar-info"></div>
         <div class="alt-btns ds-choice small">
-          <button id="bar-earlier">&larr; one a beat earlier</button>
-          <button id="bar-later">one a beat later &rarr;</button>
+          <button id="bar-earlier">&larr; A beat earlier</button>
+          <button id="bar-later">A beat later &rarr;</button>
         </div>
       </div>
       <div class="alts hidden" id="alts">
@@ -498,7 +492,7 @@ async function lookForBrowser() {
       { name: "basic-pitch", noncommercial: false, hint: "Apache-2.0, fast, safe for commercial use" +
         (m.muscriptorSmall ? "" : ". MuScriptor's better notes: Online or on This computer") },
       m.muscriptorSmall ? { name: "muscriptor-small", noncommercial: true,
-        hint: `better notes, slower: about 5 s more per part with WebGPU; +${MB(browserInfo.plan.muscriptorSmall)} ` +
+        hint: `Better notes, slower: about 5 s more per part with WebGPU; +${MB(browserInfo.plan.muscriptorSmall)} ` +
               `download${browserInfo.plan.muscriptorSmallCached ? " (already here)" : ""}. CC-BY-NC weights, so non-commercial use only` }
         : { name: "muscriptor-small", off: "MuScriptor runs Online or on This computer" },
     ];
@@ -587,11 +581,11 @@ $("look-local").onclick = e => { e.preventDefault(); lookForLocal(true); };
 
 // ---- the transcribers the chosen engine has
 const MODEL_HINT = {
-  htdemucs: 'drums, bass, vocals, other: guitars land in "other"',
-  htdemucs_6s: "adds guitar and piano; slower, and two guitars stay together",
+  htdemucs: 'Drums, bass, vocals, other: guitars land in "other"',
+  htdemucs_6s: "Adds guitar and piano; slower, and two guitars stay together",
 };
 // what each transcriber is for, in plain words; its name follows in brackets
-const BACKEND_LABEL = { muscriptor: "best quality (MuScriptor)", "basic-pitch": "fastest (basic-pitch)" };
+const BACKEND_LABEL = { muscriptor: "Best quality (MuScriptor)", "basic-pitch": "Fastest (basic-pitch)", "muscriptor-small": "Better notes (MuScriptor small)" };
 function setBackends(list) {
   const box = $("backend-choice");
   const label = b => esc(BACKEND_LABEL[b.name] || b.name);
@@ -622,7 +616,7 @@ const choiceHooks = {
     const m = $("meter").value;
     $("tempo-unit").textContent = bpmUnit(m);
     $("meter-hint").textContent = m.split(":")[0].endsWith("/8")
-      ? "the tempo counts eighths; the MIDI file writes it in quarters (half the number)" : "";
+      ? "The tempo counts eighths; the MIDI file writes it in quarters (half the number)" : "";
     $("downbeat").max = m.split(":")[0].split("/")[0];      // bar one: 1 to the numerator
   },
 };
@@ -756,7 +750,7 @@ function showSel() {
     $("sel-text").textContent = `${fmtT(sel[0])} to ${fmtT(sel[1])} · ${Math.round(sel[1] - sel[0])} s`;
   } else {
     $("start").value = ""; $("duration").value = "";
-    $("sel-text").textContent = "whole song · drag across the waveform to transcribe only a section";
+    $("sel-text").textContent = "Whole song · drag across the waveform to transcribe only a section";
   }
   $("sel-clear").classList.toggle("hidden", !sel);
   drawWave(); showBudget();
@@ -1003,7 +997,7 @@ function render(run) {
     .filter(([, p]) => p);
   const audio = $("pl-audio");
   $("pl-stems").innerHTML = sources.map(([name, p], i) =>
-    `<button data-src="${esc(url(p))}" class="${i === 0 ? "on" : ""}">${esc(name)}</button>`).join("");
+    `<button data-src="${esc(url(p))}" class="${i === 0 ? "on" : ""}">${esc(name[0].toUpperCase() + name.slice(1))}</button>`).join("");
   $("pl-stems").querySelectorAll("button").forEach(b => b.onclick = () => {
     const at = audio.currentTime, wasPlaying = !audio.paused;
     audio.src = b.dataset.src;
@@ -1029,8 +1023,8 @@ function render(run) {
     dl.appendChild(a);
   };
   link("MIDI", res.midi, true);
-  link("instrumental", res.instrumental);
-  link("manifest", res.manifest);
+  link("Instrumental", res.instrumental);
+  link("Manifest", res.manifest);
 
   // timing note: the thing that is easy to get wrong downstream
   const p = res.prepared || {};
