@@ -11,9 +11,12 @@
 <link rel="stylesheet" href="./vendor/design/playhead.css">
 <link rel="stylesheet" href="./vendor/design/controls.css">
 <link rel="stylesheet" href="./vendor/design/iconbutton.css">
+<link rel="stylesheet" href="./vendor/design/themeswitch.css">
 <script>
   // ?theme=paper|night pins the theme, like the demos; otherwise it follows the system
-  try { const t = new URLSearchParams(location.search).get("theme");
+  // ?theme= wins, then the mode saved in any of the products (they share it)
+  try { let t = new URLSearchParams(location.search).get("theme");
+        if (t !== "paper" && t !== "night") t = localStorage.getItem("swwallowws:mode");
         if (t === "paper" || t === "night") document.documentElement.dataset.theme = t; } catch (_) {}
 </script>
 <style>
@@ -158,6 +161,7 @@
   <span class="runs end" role="group" aria-label="Where the run happens">Engine:
     <span class="choice ds-choice small" id="engine-choice"><button data-engine="online">Online</button><button data-engine="local" class="hidden">This computer</button><button data-engine="browser" class="hidden" disabled title="coming later">In your browser<span class="soon" id="browser-soon">later</span></button></span>
   </span>
+  <div id="modes" class="modes"></div>
 </header>
 <div class="runs-bar"><span id="where-text"></span>
   <span id="online-budget" class="budget"></span>
@@ -369,6 +373,7 @@
 import { EngineError, findLocal, localEngine, onlineEngine, onlineGpuSeconds, onlineRunsPerDay, ONLINE_BUDGET } from "./js/engines.js";
 import { seekable } from "./vendor/design/playhead.js";
 import { iconButton } from "./vendor/design/iconbutton.js";
+import { themeSwitch } from "./vendor/design/themeswitch.js";
 // the result's Play is the design's icon toggle, as in the demo
 const plPlay = iconButton(document.getElementById("pl-play"));
 
@@ -1221,6 +1226,9 @@ $("contact-form").onsubmit = async e => {
 
 // ---- start: Online by default; This computer joins when it answers, In your browser
 // when its models do
+// System, Paper or Night: the mode every product shares; the waveform and rolls repaint in it
+themeSwitch($("modes"), { onChange: () => { drawWave(); drawRoll(); drawParts(); } });
+
 selectEngine("online");
 lookForLocal(false);
 lookForBrowser();

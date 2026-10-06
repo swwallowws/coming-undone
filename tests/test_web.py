@@ -393,6 +393,9 @@ def test_page_shares_the_studio_header_and_the_design_controls(client):
     header = page.split('<header class="ds-header">', 1)[1].split("</header>", 1)[0]
     assert 'class="ds-wordmark"' in header and "simply" not in header
     assert "Engine:" in header and 'id="engine-choice"' in header and "Runs:" not in page
+    # the colour mode switch every product shares, at the header's end, and the saved mode before paint
+    assert header.rstrip().endswith('<div id="modes" class="modes"></div>')
+    assert 'localStorage.getItem("swwallowws:mode")' in page and "themeSwitch($(\"modes\")" in page
     bar = page.split('<div class="runs-bar">', 1)[1].split("</div>", 1)[0]
     assert 'id="where-text"' in bar and 'id="contact-open"' in bar
     for c in ('class="choice ds-choice', 'class="chip ds-chip', 'class="ds-drop"', 'class="ds-button primary"', 'class="ds-label"'):
