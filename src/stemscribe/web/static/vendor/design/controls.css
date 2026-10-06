@@ -156,3 +156,7 @@
 
 .ds-button:focus-visible, .ds-choice > button:focus-visible { z-index: 3; outline: 2px solid var(--acc); outline-offset: 1px; }
 .ds-button:disabled, .ds-choice > button:disabled, .ds-field:disabled, .ds-select:disabled { cursor: default; opacity: .45; }
+.ds-choice > label:has(input:disabled) { cursor: default; opacity: .45; }
+/* each control sets its own display, which would beat the hidden attribute */
+.ds-button[hidden], .ds-choice[hidden], .ds-chips[hidden], .ds-chip[hidden], .ds-field[hidden], .ds-select[hidden], .ds-drop[hidden] { display: none; }
+.ds-choice > label:has(input:disabled):hover { border-color: var(--line); }

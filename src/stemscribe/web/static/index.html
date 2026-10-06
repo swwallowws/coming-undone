@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="./vendor/design/tokens.css">
 <link rel="stylesheet" href="./vendor/design/playhead.css">
 <link rel="stylesheet" href="./vendor/design/controls.css">
+<link rel="stylesheet" href="./vendor/design/iconbutton.css">
 <script>
   // ?theme=paper|night pins the theme, like the demos; otherwise it follows the system
   try { const t = new URLSearchParams(location.search).get("theme");
@@ -31,6 +32,7 @@
   header.bar h1 { margin: 0; font-size: 22px; font-weight: var(--head-weight); font-stretch: var(--head-stretch); letter-spacing: var(--head-tracking); }
   header.bar h1 span { color: var(--acc); }
   .ver { color: var(--ink-mut); font-family: var(--font-mono); font-size: 12px; }
+  .ver:empty { display: none; }   /* no version known: no extra gap before the tagline */
   .tagline { color: var(--ink-mut); }
   .wrap { max-width: 900px; margin: 0 auto; padding: 24px 24px 80px; }
   .mono { font-family: var(--font-mono); font-size: 12.5px; }
@@ -302,7 +304,7 @@
       <div class="legend mono" id="legend"></div>
       <div id="parts" class="hidden"><div id="parts-head"></div></div>
       <div class="player">
-        <button class="ds-button primary" id="pl-play">Play</button>
+        <button id="pl-play" type="button" data-icon="play" data-toggle aria-label="Play"></button>
         <span class="choice ds-choice"id="pl-stems"></span>
         <span class="mono mut" id="pl-time"></span>
       </div>
@@ -372,6 +374,9 @@
 <script type="module">
 import { EngineError, findLocal, localEngine, onlineEngine, onlineGpuSeconds, onlineRunsPerDay, ONLINE_BUDGET } from "./js/engines.js";
 import { seekable } from "./vendor/design/playhead.js";
+import { iconButton } from "./vendor/design/iconbutton.js";
+// the result's Play is the design's icon toggle, as in the demo
+const plPlay = iconButton(document.getElementById("pl-play"));
 
 // ---- config: every outside address the page uses, in one place
 const params = new URLSearchParams(location.search);
@@ -715,8 +720,12 @@ function drawWave() {
   g.fillStyle = line; g.fillRect(0, h / 2, w, 1);
   if (!peaks) return;
   const cols = Math.floor(w / 3);
+  // scaled to the loudest moment, so a quiet recording still fills the box
+  let top = 0;
+  for (const v of peaks) top = Math.max(top, v);
+  top = top || 1;
   for (let x = 0; x < cols; x++) {
-    const p = peaks[Math.floor((x / cols) * peaks.length)], t = (x / cols) * total;
+    const p = peaks[Math.floor((x / cols) * peaks.length)] / top, t = (x / cols) * total;
     const inside = !sel || (t >= sel[0] && t <= sel[1]);
     g.globalAlpha = inside ? 1 : 0.22;
     g.fillStyle = acc;
@@ -1002,9 +1011,9 @@ function render(run) {
     $("pl-stems").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
   });
   if (sources.length) audio.src = url(sources[0][1]);
-  $("pl-play").onclick = () => { audio.paused ? audio.play() : audio.pause(); };
-  audio.onplay = () => { $("pl-play").textContent = "Pause"; };
-  audio.onpause = () => { $("pl-play").textContent = "Play"; };
+  $("pl-play").onclick = () => { audio.paused ? audio.play() : audio.pause(); plPlay.setPressed(!audio.paused); };
+  audio.onplay = () => { plPlay.setPressed(true); };
+  audio.onpause = () => { plPlay.setPressed(false); };
   // a section's MIDI keeps the original file's timeline, its audio starts at 0: the roll starts at the section
   rollStart = (res.prepared || {}).offset || 0;
   roll = run.roll; drawLegend(); drawRoll(); followAudio();
