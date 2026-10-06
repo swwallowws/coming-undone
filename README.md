@@ -171,9 +171,9 @@ the alternates are one click away and re-stamp instantly.
 It is **localhost-only by design**: no auth, runs jobs on your machine, reads
 and writes your files. Don't expose it.
 
-### Where a run happens (the Runs: switch)
+### Where a run happens (the Engine switch)
 
-The page has a **Runs:** switch with the engines it can use:
+The header has an **Engine** switch with the engines it can use:
 
 - **Online** (default): the Hugging Face Space in `space/` (ZeroGPU), called through
   Gradio's JavaScript client (vendored in `web/static/vendor/gradio-client/`). Up to
