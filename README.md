@@ -1,6 +1,6 @@
 # Coming Undone
 
-simply split.
+Simply split.
 
 Formerly stemscribe; the code, package and commands keep that name.
 
