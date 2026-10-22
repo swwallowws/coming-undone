@@ -13,9 +13,10 @@ useful on its own in any producer workflow.
 
 ## In pictures
 
-<a href="media/loop-paper.mp4"><img src="media/full-paper.png" alt="Coming Undone: a song split into parts, each written as MIDI" width="720"></a>
-
-Files to share: [loop, Paper](media/loop-paper.mp4) · [loop, Night](media/loop-night.mp4) · [still, Paper](media/full-paper.png) · [still, Night](media/full-night.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="media/loop-night.gif">
+  <img src="media/loop-paper.gif" alt="Coming Undone: a song split into parts, each written as MIDI" width="720">
+</picture>
 
 ```
 audio in (mp3/wav/m4a): a file, or a URL
