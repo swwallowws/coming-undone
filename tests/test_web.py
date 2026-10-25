@@ -380,8 +380,12 @@ def test_page_has_the_runs_switch_and_one_config(client):
     assert "Engine:" in page and 'data-engine="online"' in page and 'data-engine="local"' in page
     assert 'space: params.get("space") || "swwallowws/coming-undone"' in page
     assert page.count("formspree.io") == 1                  # the endpoint lives in CONFIG only
+    # the form is the design system's, which every studio shares: an email to write back to,
+    # the spam trap and the subject, sent to CONFIG's endpoint
+    form = client.get("/vendor/design/contact.js").text
     for field in ('name="email"', 'type="email"', "required", 'name="_gotcha"', 'name="_subject"'):
-        assert field in page
+        assert field in form
+    assert 'contactForm($("contact"), { subject: "Coming Undone: new message", endpoint: CONFIG.contactEndpoint })' in page
     assert "—" not in page
 
 
@@ -396,10 +400,13 @@ def test_page_shares_the_studio_header_and_the_design_controls(client):
     # the colour mode switch every product shares, at the header's end, and the saved mode before paint
     assert header.rstrip().endswith('<div id="modes" class="modes"></div>')
     assert 'localStorage.getItem("swwallowws:mode")' in page and "themeSwitch($(\"modes\")" in page
-    bar = page.split('<div class="runs-bar">', 1)[1].split("</div>", 1)[0]
-    assert 'id="where-text"' in bar and 'id="contact-open"' in bar
-    for c in ('class="choice ds-choice', 'class="chip ds-chip', 'class="ds-drop"', 'class="ds-button primary"', 'class="ds-label"'):
+    # one footer line, as in the other studios: where the run happens, and the shared Get in touch form
+    foot = page.split('<footer class="cu-foot ds-footer">', 1)[1].split("</footer>", 1)[0]
+    assert 'id="where-text"' in foot and 'id="contact"' in foot and "contactForm($(\"contact\")" in page
+    for c in ('class="choice ds-choice', 'class="chip ds-check', 'class="ds-drop"', 'class="ds-button primary"', 'class="ds-label"'):
         assert c in page, c
+    # the options wait for a file or a link; the rarer ones fold behind More options
+    assert 'class="form-grid needs-source"' in page and '<details class="more">' in page
     assert "background: var(--ink); color: var(--ground)" not in page   # the chosen option is the accent
 
 

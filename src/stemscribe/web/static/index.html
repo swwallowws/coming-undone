@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="./vendor/design/controls.css">
 <link rel="stylesheet" href="./vendor/design/iconbutton.css">
 <link rel="stylesheet" href="./vendor/design/themeswitch.css">
+<link rel="stylesheet" href="./vendor/design/contact.css">
 <script>
   // ?theme=paper|night pins the theme, like the demos; otherwise it follows the system
   // ?theme= wins, then the mode saved in any of the products (they share it)
@@ -23,18 +24,26 @@
   :root { --melody: var(--acc); --bass: var(--ink); --comping: var(--ink-mut); }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--font-sans);
-         font-size: 14px; line-height: 1.45; font-variant-numeric: tabular-nums; }
+         font-size: var(--text-body); line-height: 1.45; font-variant-numeric: tabular-nums;
+         display: flex; flex-direction: column; min-height: 100vh; }   /* the footer sits at the bottom of a short page */
+  body > .wrap { flex: 1 0 auto; width: 100%; }
+  /* the footer, as in the other studios: where the run happens on the left, Get in touch on the right */
+  .cu-foot { width: calc(100% - 48px); max-width: 912px; margin: 0 auto; padding: 16px 0 32px; border-top: var(--hairline); }
+  .cu-foot a { color: var(--ink-mut); }
+  .cu-foot a:hover { color: var(--ink); }
+  .cu-foot .budget:empty { display: none; }
+  /* the options wait for a file or a link; the rarer ones fold behind More options */
+  body:not([data-source]) .needs-source { display: none; }
+  details.more { grid-column: 1 / -1; }
+  details.more > summary { cursor: pointer; width: fit-content; color: var(--ink-mut); font-size: var(--text-ui); }
+  details.more > summary:hover, details.more[open] > summary { color: var(--ink); }
+  details.more > .form-grid { margin-top: 18px; }
   /* the header is the design's (.ds-header); the Engine switch sits at its end, a bar under it says where */
   .ds-header .runs { display: inline-flex; gap: 8px; align-items: center; color: var(--ink-mut); }
-  .runs-bar { display: flex; gap: 6px 12px; align-items: baseline; flex-wrap: wrap; padding: 6px 24px;
-              border-bottom: var(--hairline); color: var(--ink-mut); font-size: 13px; }
-  .runs-bar a { color: var(--ink-mut); white-space: nowrap; }
-  .runs-bar a:hover { color: var(--ink); }
-  .runs-bar .budget:empty { display: none; }
-  .ver { color: var(--ink-mut); font-family: var(--font-mono); font-size: 12px; }
+  .ver { color: var(--ink-mut); font-family: var(--font-mono); font-size: 13px; }
   .ver:empty { display: none; }
   .wrap { max-width: 960px; margin: 0 auto; padding: 24px 24px 80px; }   /* the studios' column */
-  .mono { font-family: var(--font-mono); font-size: 12.5px; }
+  .mono { font-family: var(--font-mono); font-size: 13px; }
   .hidden { display: none !important; }
 
   /* sections: hairline rules, no cards */
@@ -43,7 +52,7 @@
   h2.ds-label { margin: 0 0 12px; }
   .filename { font-family: var(--font-mono); font-size: 13px; color: var(--acc); }
 
-  .or { display: flex; align-items: center; gap: 12px; color: var(--ink-mut); font-size: 12px; margin: 16px 0 8px; }
+  .or { display: flex; align-items: center; gap: 12px; color: var(--ink-mut); font-size: var(--text-ui); margin: 16px 0 8px; }
   .or::before, .or::after { content: ""; flex: 1; border-top: var(--hairline); }
   .row { display: flex; gap: 8px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
 
@@ -54,12 +63,12 @@
   input:focus, select:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 16px; }
-  label.f { display: block; font-size: 13px; color: var(--ink-mut); margin-bottom: 4px; }
-  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  label.f { display: block; font-size: var(--text-ui); color: var(--ink-mut); margin-bottom: 4px; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: var(--text-ui); }
   .check input { accent-color: var(--acc); width: 14px; height: 14px; }
-  .hint { color: var(--ink-mut); font-size: 12px; margin-top: 4px; }
+  .hint { color: var(--ink-mut); font-size: var(--text-ui); margin-top: 4px; }
 
-  #log { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7; max-height: 240px; overflow-y: auto; white-space: pre-wrap; }
+  #log { font-family: var(--font-mono); font-size: 13px; line-height: 1.7; max-height: 240px; overflow-y: auto; white-space: pre-wrap; }
   .stage { color: var(--acc); }
   .stage.error { font-weight: 700; }
   .spin { display: inline-block; width: 10px; height: 10px; margin-right: 8px; background: var(--acc);
@@ -69,47 +78,47 @@
 
   .tempo-hero { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .bpm { font-size: 32px; font-weight: var(--head-weight); font-stretch: var(--head-stretch); letter-spacing: var(--head-tracking); }
-  .bpm-unit { color: var(--ink-mut); font-size: 13px; }
-  .pill { font-family: var(--font-mono); font-size: 11px; padding: 1px 6px; border: var(--hairline); color: var(--ink-mut); }
+  .bpm-unit { color: var(--ink-mut); font-size: var(--text-ui); }
+  .pill { font-family: var(--font-mono); font-size: 12px; padding: 1px 6px; border: var(--hairline); color: var(--ink-mut); }
   .alts { margin-top: 16px; }
   .alt-btns { margin-top: 8px; }
   .alt-btns .alt { font-family: var(--font-mono); }
 
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; color: var(--ink-mut); font-weight: 400; font-size: 12px; padding: 0 8px 6px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: var(--text-ui); }
+  th { text-align: left; color: var(--ink-mut); font-weight: 400; font-size: 13px; padding: 0 8px 6px 0; }
   td { padding: 6px 8px 6px 0; border-top: var(--hairline); }
   .tname { font-weight: 700; }
   .dot { display: inline-block; width: 8px; height: 8px; margin-right: 8px; }
 
 
   .dl { display: flex; gap: 8px; flex-wrap: wrap; }
-  .note { color: var(--ink-mut); font-size: 12px; margin-top: 10px; }
-  .warn-box { border-left: 2px solid var(--acc); padding: 4px 0 4px 12px; margin-bottom: 12px; font-size: 13px; }
-  .err-box { border-left: 2px solid var(--acc); padding: 4px 0 4px 12px; font-family: var(--font-mono); font-size: 12.5px; white-space: pre-wrap; }
+  .note { color: var(--ink-mut); font-size: var(--text-ui); margin-top: 10px; }
+  .warn-box { border-left: 2px solid var(--acc); padding: 4px 0 4px 12px; margin-bottom: 12px; font-size: var(--text-ui); }
+  .err-box { border-left: 2px solid var(--acc); padding: 4px 0 4px 12px; font-family: var(--font-mono); font-size: 13px; white-space: pre-wrap; }
   a { color: var(--ink); text-underline-offset: 3px; }
   /* the form: a label column and a value column, every option visible */
   .mut { color: var(--ink-mut); }
   .spacer { flex: 1; }
   .form-grid { display: grid; grid-template-columns: 8.5rem 1fr; gap: 18px 16px; align-items: baseline; margin-top: 28px; }
-  .form-grid > .label { color: var(--ink-mut); font-size: 13px; padding-top: 6px; }
+  .form-grid > .label { color: var(--ink-mut); font-size: var(--text-ui); padding-top: 6px; }
   .chip.off, .dep-nums.off { opacity: .35; pointer-events: none; }
   .nums { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 10px; }
-  .num { font-size: 13px; color: var(--ink-mut); display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
-  .num input[type=number] { width: 5.5em; font-family: var(--font-mono); font-size: 12.5px; padding: 3px 6px; }
+  .num { font-size: var(--text-ui); color: var(--ink-mut); display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .num input[type=number] { width: 5.5em; font-family: var(--font-mono); font-size: 13px; padding: 3px 6px; }
 
   /* results: the transcribed MIDI as a roll, one player, downloads at hand */
   .result-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
   .roll-box { position: relative; height: 240px; border: var(--hairline); }
   #roll { display: block; width: 100%; height: 100%; }
   #roll-head { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--acc); pointer-events: none; }
-  .legend { display: flex; gap: 16px; margin: 8px 0 0; font-size: 12px; color: var(--ink-mut); }
+  .legend { display: flex; gap: 16px; margin: 8px 0 0; font-size: 13px; color: var(--ink-mut); }
   .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 6px; }
   /* by part: one lane per output file, each its own small roll on the shared timeline */
   #parts { --lane-h: 52px; position: relative; display: grid; grid-template-columns: 8.5rem 1fr; gap: 6px 12px; }
   .part-name { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
   .part-name a.filename { text-decoration: none; overflow-wrap: anywhere; }
   .part-name a.filename:hover { text-decoration: underline; }
-  .part-name .mono { font-size: 11.5px; }
+  .part-name .mono { font-size: 12px; }
   .part-roll { display: block; width: 100%; height: var(--lane-h); border: var(--hairline); }
   #parts-head { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--acc); pointer-events: none; }
   .player { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
@@ -122,22 +131,11 @@
   /* the chosen file, drawn as its waveform */
   #wave-box { border: var(--hairline); background: var(--ground-2); padding: 12px 14px 10px; }
   .wave-head, .wave-foot { display: flex; align-items: baseline; gap: 8px; }
-  .wave-foot { font-size: 12px; margin-top: 6px; min-height: 22px; align-items: center; }
+  .wave-foot { font-size: 13px; margin-top: 6px; min-height: 22px; align-items: center; }
   #wave { display: block; width: 100%; height: 96px; margin-top: 10px; cursor: crosshair; touch-action: none; }
-  .soon { font-family: var(--font-mono); font-size: 11px; margin-left: 6px; }
-  #contact { border-left: 2px solid var(--acc); padding: 2px 0 4px 14px; margin: 0 0 24px; max-width: 34rem; }
-  #contact p { margin: 0 0 12px; }
-  #contact form { display: grid; gap: 10px; }
-  #contact label.f { margin-bottom: 2px; }
-  #contact textarea { width: 100%; min-height: 5.5em; font: inherit; color: var(--ink); background: var(--ground-2);
-    border: var(--hairline); border-radius: 0; padding: 6px 8px; resize: vertical; }
-  #contact textarea:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
-  #contact input[type=email] { width: 100%; font: inherit; color: var(--ink); background: var(--ground-2);
-    border: var(--hairline); border-radius: 0; padding: 6px 8px; }
-  #contact input[type=email]:focus { outline: 2px solid var(--acc); outline-offset: -1px; }
-  .trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  .soon { font-family: var(--font-mono); font-size: 12px; margin-left: 6px; }
   .err-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .credits { border-top: var(--hairline); margin-top: 40px; padding-top: 16px; color: var(--ink-mut); font-size: 12px; max-width: 70ch; }
+  .credits { border-top: var(--hairline); margin-top: 40px; padding-top: 16px; color: var(--ink-mut); font-size: var(--text-ui); max-width: 70ch; }
   .credits ul { margin: 0; padding-left: 16px; }
   .credits li { margin-bottom: 4px; }
   .credits a { color: var(--ink-mut); }
@@ -149,7 +147,7 @@
   }
   @media (max-width: 600px) {
     .ds-header .runs { margin-left: 0; flex-wrap: wrap; }
-    .runs-bar { padding: 6px 16px; }
+    .cu-foot { width: calc(100% - 32px); }
     .wrap { padding: 16px 16px 64px; }
   }
 </style>
@@ -163,25 +161,8 @@
   </span>
   <div id="modes" class="modes"></div>
 </header>
-<div class="runs-bar"><span id="where-text"></span>
-  <span id="online-budget" class="budget"></span>
-  <a href="#" id="look-local" class="hidden">Running Coming Undone on this computer? Look for it.</a>
-  <span class="spacer"></span><a href="#" id="contact-open" aria-expanded="false" aria-controls="contact">Get in touch</a></div>
 <div class="wrap">
   <div class="panel" id="form">
-    <div id="contact" class="hidden">
-      <p>Say hi, ask anything, or show me what you made.</p>
-      <form id="contact-form" novalidate>
-        <div><label class="f" for="c-name">Name</label><input type="text" id="c-name" name="name" autocomplete="name"></div>
-        <div><label class="f" for="c-email">Email</label><input type="email" id="c-email" name="email" autocomplete="email" required></div>
-        <div><label class="f" for="c-making">Message</label><textarea id="c-making" name="message"></textarea></div>
-        <input type="hidden" name="_subject" value="Coming Undone: new message">
-        <div class="trap" aria-hidden="true"><label>Leave this empty <input type="text" name="_gotcha" tabindex="-1" autocomplete="off"></label></div>
-        <div class="row" style="margin-top:2px"><button class="ds-button primary" type="submit" id="c-send">Send</button>
-          <span class="hint" id="c-status" role="status"></span></div>
-      </form>
-      <p id="c-thanks" class="hidden">Thank you, I'll write back soon.</p>
-    </div>
     <div id="drop" class="ds-drop" tabindex="0" role="button" aria-label="Choose an audio file">
       <div class="ds-drop-main">Drop an audio file, or click to choose</div>
       <div class="ds-drop-sub">mp3, wav, m4a, flac</div>
@@ -199,7 +180,8 @@
     <div class="or" id="or"><span>Or paste a link</span></div>
     <input type="text" id="url" class="ds-field" placeholder="https://www.youtube.com/watch?v=..." aria-label="Link to audio">
 
-    <div class="form-grid">
+    <!-- the options, once there is a file or a link: the everyday ones, the rest behind More options -->
+    <div class="form-grid needs-source">
       <span class="label">Parts</span>
       <div><span class="choice ds-choice" data-for="model">
           <button data-v="htdemucs">4 parts</button><button data-v="htdemucs_6s">6 parts</button></span>
@@ -213,44 +195,9 @@
 
       <span class="label">Tracks</span>
       <div class="chips ds-chips">
-        <label class="chip ds-chip"><input type="checkbox" id="vocals" checked><span>Vocals as melody</span></label>
-        <label class="chip ds-chip"><input type="checkbox" id="monovocals"><span>One voice melody</span></label>
-        <label class="chip ds-chip"><input type="checkbox" id="monobass"><span>One note bass</span></label>
-      </div>
-
-      <span class="label">Cleanup</span>
-      <div>
-        <div class="chips ds-chips">
-          <label class="chip ds-chip"><input type="checkbox" id="cleanup" checked><span>Clean up notes</span></label>
-          <label class="chip ds-chip dep"><input type="checkbox" id="deoverlap" checked><span>De-overlap</span></label>
-          <label class="chip ds-chip dep"><input type="checkbox" id="trim" checked><span>Trim silence</span></label>
-          <label class="chip ds-chip dep"><input type="checkbox" id="legato"><span>Legato</span></label>
-          <label class="chip ds-chip"><input type="checkbox" id="strip" checked><span>Strip metadata</span></label>
-        </div>
-        <div class="nums dep-nums">
-          <label class="num">Notes at most <input type="number" id="maxbeats" value="2" step="0.5" min="0"> beats</label>
-          <label class="num">Drop notes quieter than <input type="number" id="velfloor" value="15" step="1" min="0" max="127"></label>
-          <label class="num" id="legatogap-row">Legato closes gaps up to <input type="number" id="legatogap" value="0.25" step="0.25" min="0"> beats</label>
-        </div>
-      </div>
-
-      <span class="label">Tempo</span>
-      <label class="num"><input type="number" id="tempo" placeholder="auto" step="0.01" min="20" max="400"> <span id="tempo-unit">BPM</span>
-        <span class="mut">Empty: detected from the audio</span></label>
-
-      <span class="label">Time signature</span>
-      <div><span class="choice ds-choice" data-for="meter">
-          <button data-v="4/4">4/4</button><button data-v="3/4">3/4</button><button data-v="6/8">6/8</button><button data-v="9/8:2+2+2+3">9/8 (2+2+2+3)</button><button data-v="12/8">12/8</button></span>
-        <div class="hint" id="meter-hint"></div></div>
-      <input type="hidden" id="meter" value="4/4">
-
-      <span class="label">Grid</span>
-      <div>
-        <div class="chips ds-chips"><label class="chip ds-chip"><input type="checkbox" id="snap"><span>Snap notes to the grid</span></label></div>
-        <div class="nums">
-          <label class="num">Bar one on beat <input type="number" id="downbeat" placeholder="auto" step="1" min="1" max="4">
-            <span class="mut">Empty: guessed</span></label>
-        </div>
+        <label class="chip ds-check"><input type="checkbox" id="vocals" checked><span>Vocals as melody</span></label>
+        <label class="chip ds-check"><input type="checkbox" id="monovocals"><span>One voice melody</span></label>
+        <label class="chip ds-check"><input type="checkbox" id="monobass"><span>One note bass</span></label>
       </div>
 
       <span class="label">Section</span>
@@ -267,6 +214,46 @@
           <button data-v="native">Original</button><button data-v="mp3">MP3, 192k</button></span>
         <div class="hint">Original skips a second lossy encode</div></div>
       <input type="hidden" id="audiofmt" value="native">
+
+      <details class="more">
+        <summary>More options</summary>
+        <div class="form-grid">
+          <span class="label">Cleanup</span>
+          <div>
+            <div class="chips ds-chips">
+              <label class="chip ds-check"><input type="checkbox" id="cleanup" checked><span>Clean up notes</span></label>
+              <label class="chip ds-check dep"><input type="checkbox" id="deoverlap" checked><span>De-overlap</span></label>
+              <label class="chip ds-check dep"><input type="checkbox" id="trim" checked><span>Trim silence</span></label>
+              <label class="chip ds-check dep"><input type="checkbox" id="legato"><span>Legato</span></label>
+              <label class="chip ds-check"><input type="checkbox" id="strip" checked><span>Strip metadata</span></label>
+            </div>
+            <div class="nums dep-nums">
+              <label class="num">Notes at most <input type="number" id="maxbeats" value="2" step="0.5" min="0"> beats</label>
+              <label class="num">Drop notes quieter than <input type="number" id="velfloor" value="15" step="1" min="0" max="127"></label>
+              <label class="num" id="legatogap-row">Legato closes gaps up to <input type="number" id="legatogap" value="0.25" step="0.25" min="0"> beats</label>
+            </div>
+          </div>
+
+          <span class="label">Tempo</span>
+          <label class="num"><input type="number" id="tempo" placeholder="auto" step="0.01" min="20" max="400"> <span id="tempo-unit">BPM</span>
+            <span class="mut">Empty: detected from the audio</span></label>
+
+          <span class="label">Time signature</span>
+          <div><span class="choice ds-choice" data-for="meter">
+              <button data-v="4/4">4/4</button><button data-v="3/4">3/4</button><button data-v="6/8">6/8</button><button data-v="9/8:2+2+2+3">9/8 (2+2+2+3)</button><button data-v="12/8">12/8</button></span>
+            <div class="hint" id="meter-hint"></div></div>
+          <input type="hidden" id="meter" value="4/4">
+
+          <span class="label">Grid</span>
+          <div>
+            <div class="chips ds-chips"><label class="chip ds-check"><input type="checkbox" id="snap"><span>Snap notes to the grid</span></label></div>
+            <div class="nums">
+              <label class="num">Bar one on beat <input type="number" id="downbeat" placeholder="auto" step="1" min="1" max="4">
+                <span class="mut">Empty: guessed</span></label>
+            </div>
+          </div>
+        </div>
+      </details>
 
       <span></span>
       <div class="row" style="margin-top:8px">
@@ -368,12 +355,19 @@
     </ul>
   </footer>
 </div>
+<!-- one line, as in the other studios: where the run happens, and Get in touch -->
+<footer class="cu-foot ds-footer">
+  <span><span id="where-text"></span> <span id="online-budget" class="budget"></span>
+    <a href="#" id="look-local" class="hidden">Running Coming Undone on this computer? Look for it.</a></span>
+  <div id="contact"></div>
+</footer>
 
 <script type="module">
 import { EngineError, findLocal, localEngine, onlineEngine, onlineGpuSeconds, onlineRunsPerDay, ONLINE_BUDGET } from "./js/engines.js";
 import { seekable } from "./vendor/design/playhead.js";
 import { iconButton } from "./vendor/design/iconbutton.js";
 import { themeSwitch } from "./vendor/design/themeswitch.js";
+import { contactForm } from "./vendor/design/contact.js";
 // the result's Play is the design's icon toggle, as in the demo
 const plPlay = iconButton(document.getElementById("pl-play"));
 
@@ -422,8 +416,7 @@ const engines = { online: onlineEngine(CONFIG.space, () => import(CONFIG.gradioC
 let engine = "online", localBackends = null, browserBackends = null, browserInfo = null;
 const MB = b => `${Math.round(b / 1e6)} MB`;
 const WHERE = {
-  online: `Runs online, on a free GPU at Hugging Face. Your file goes there for the run and is deleted within the hour. ` +
-          `Up to ${CONFIG.onlineMaxSeconds} s a run.`,
+  online: `Runs online on a free GPU at Hugging Face; your file is deleted within the hour.`,
   local: () => `Runs on this computer, through Coming Undone at ${engines.local.base ? engines.local.base.replace(/^https?:\/\//, "") : location.host}. ` +
               `Nothing leaves your machine: whole songs, full quality.`,
   browser: () => {
@@ -543,8 +536,7 @@ function showBudget() {
   const secs = Math.max(1, Math.round(onlineSeconds()));
   const runs = s => onlineRunsPerDay(onlineGpuSeconds(s, opts), ONLINE_BUDGET.quota.signedOut);
   const n = runs(secs);
-  el.textContent = `Online: about ${n} free run${n === 1 ? "" : "s"} a day at ${secs} s.` +
-    (secs > 10 && runs(10) > n ? " Shorter sections leave room for more." : "");
+  el.textContent = `About ${n} free run${n === 1 ? "" : "s"} a day at ${secs} s.`;
 }
 document.querySelectorAll("#engine-choice button").forEach(b => b.onclick = () => {
   if (b.disabled) return;
@@ -784,6 +776,8 @@ $("url").oninput = () => {
 function refresh() {
   const u = $("url").value.trim();
   const ok = !!file || /^https?:\/\/\S+$/i.test(u);
+  // the options show once there is something to split: a file, or a link being typed
+  document.body.toggleAttribute("data-source", !!file || !!u);
   $("go").disabled = !ok;
   $("go").textContent = (!file && u) ? "Fetch, split and write down" : "Split and write down";
 }
@@ -890,9 +884,11 @@ function fail(e) {
     const more = document.createElement("button");
     more.className = "ds-button"; more.textContent = "Ask for more online runs";
     more.onclick = () => {
-      if ($("contact").classList.contains("hidden")) $("contact-open").click();
-      if (!$("c-making").value) $("c-making").value = "I'd like more online runs of Coming Undone. What I'm working on: ";
+      const box = $("contact").querySelector("details"), msg = $("contact").querySelector("textarea");
+      if (box) box.open = true;
+      if (msg && !msg.value) msg.value = "I'd like more online runs of Coming Undone. What I'm working on: ";
       $("contact").scrollIntoView({ behavior: "smooth", block: "center" });
+      msg?.focus();
     };
     acts.appendChild(more);
     return;
@@ -1192,37 +1188,8 @@ addEventListener("resize", drawParts);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawRoll);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawParts);
 
-// ---- get in touch: a small form, sent to CONFIG.contactEndpoint (Formspree)
-$("contact-open").onclick = e => {
-  e.preventDefault();
-  const open = $("contact").classList.toggle("hidden") === false;
-  $("contact-open").setAttribute("aria-expanded", String(open));
-  if (open) $("c-name").focus();
-};
-$("contact-form").onsubmit = async e => {
-  e.preventDefault();
-  const form = $("contact-form");
-  if (!$("c-email").checkValidity()) {
-    $("c-status").textContent = "An email address, please, so I can write back.";
-    $("c-email").focus();
-    return;
-  }
-  $("c-send").disabled = true;
-  $("c-status").textContent = "sending...";
-  try {
-    const r = await fetch(CONFIG.contactEndpoint, {
-      method: "POST", body: new FormData(form), headers: { Accept: "application/json" },
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    form.classList.add("hidden");
-    $("c-thanks").classList.remove("hidden");
-  } catch (_) {
-    $("c-status").textContent = "That did not go through. Nothing is lost: press Send to try again.";
-    $("c-send").textContent = "Send again";
-  } finally {
-    $("c-send").disabled = false;
-  }
-};
+// ---- get in touch: the form every studio shares, at the footer's right
+contactForm($("contact"), { subject: "Coming Undone: new message", endpoint: CONFIG.contactEndpoint });
 
 // ---- start: Online by default; This computer joins when it answers, In your browser
 // when its models do

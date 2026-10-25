@@ -165,9 +165,13 @@ applies to the audio going in.
 stemscribe-web            # → http://127.0.0.1:8002
 ```
 
-Drop a file, watch progress stream, audition stems, download MIDI. Tempo is
-detected automatically and never asked about up front; if the grid looks wrong,
-the alternates are one click away and re-stamp instantly.
+Drop a file, watch progress stream, audition stems, download MIDI. The options
+show once there is a file or a link: parts, notes, tracks and the section to
+transcribe, with cleanup, tempo, time signature and the grid behind **More
+options**. Tempo is detected automatically and never asked about up front; if the
+grid looks wrong, the alternates are one click away and re-stamp instantly. The
+footer says where the run happens and holds the "Get in touch" form every studio
+shares.
 
 It is **localhost-only by design**: no auth, runs jobs on your machine, reads
 and writes your files. Don't expose it.
@@ -182,7 +186,7 @@ The header has an **Engine** switch with the engines it can use:
   signed out, which is what calls from this page count as, 5 with a free Hugging Face
   account on the Space's own page). Only separation and transcription use the GPU,
   sized to the clip, so a 30 s run with muscriptor fits about once a day signed out
-  (10 s: twice; basic-pitch: 3 times); the page shows the count for the chosen length
+  (10 s: twice; basic-pitch: 3 times); the page's footer shows the count for the chosen length
   (engines.js mirrors `space/split.py`'s budget), and running out offers the other
   engines. The Space id is `CONFIG.space` at the top of the page's script; `?space=`
   in the page's address overrides it (a local Gradio URL, for testing).

@@ -1,0 +1,27 @@
+/* A studio's footer and its "Get in touch" form (contact.js). The footer: one line on the
+   left (where the work happens, where files stay), the form's summary on the right, the
+   form opening under it, right-aligned. Link after tokens.css and controls.css. */
+
+.ds-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 24px;
+  align-items: start;
+  color: var(--ink-mut);
+  font-size: var(--text-ui);
+}
+
+details.contact { display: flex; flex-direction: column; align-items: flex-end; }
+details.contact summary { cursor: pointer; color: var(--ink-mut); list-style: none; }
+details.contact summary::-webkit-details-marker { display: none; }
+details.contact summary:hover { color: var(--ink); }
+details.contact summary:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.contact-form { display: grid; gap: 8px; width: min(460px, 100%); margin: 8px 0 4px; color: var(--ink); }
+.contact-form p { margin: 0; }
+.contact-form label { display: grid; gap: 4px; font-size: var(--text-ui); }
+.contact-form label span { color: var(--ink-mut); }
+.contact-form textarea { resize: vertical; }
+.contact-form .gotcha { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.contact-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.contact-msg { color: var(--ink-mut); }
+.contact-thanks { color: var(--ink); margin: 8px 0; }
