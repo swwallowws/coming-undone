@@ -112,52 +112,37 @@ res.manifest_path      # out/manifest.json
 stemscribe song.mp3 -o out/ --no-vocals-melody --midi-only  # default: muscriptor
 stemscribe song.mp3 -o out/ --backend basic-pitch           # commercial-safe, fast
 stemscribe song.mp3 -o out/ --start 30 --duration 20      # fast iteration
-stemscribe 'https://www.youtube.com/watch?v=...' -o out/  # URL works anywhere a path does
+stemscribe 'https://example.com/my-track.mp3' -o out/   # a URL, for audio you have the rights to
 stemscribe --help
 ```
 
-### Fetching from a URL
+### Audio from a URL (command line only)
 
-Anywhere `process()` or the CLI takes a path, it also takes a URL that yt-dlp
-can handle; the web UI has a link field next to the drop zone.
+**Only for audio you have the rights to**: your own recordings, or tracks whose
+licence allows downloading and reworking them. Many sites' terms forbid
+downloading, and fetching someone else's recording without permission can be
+copyright infringement. The web UI takes files only.
+
+With the `fetch` extra, `process()` and the CLI also take a URL that yt-dlp can
+read, in place of a path:
 
 ```python
-res = process("https://www.youtube.com/watch?v=...", out_dir="out/")
+res = process("https://example.com/my-track.mp3", out_dir="out/")
 res.source.title      # what it was
 res.source.url        # where it came from
 ```
 
-**Default keeps the native codec, not mp3.** YouTube serves Opus/AAC, and
-`prepare` decodes to wav before demucs sees anything, so transcoding to mp3 in
-between is a second lossy generation that costs quality and buys nothing. Use
-`--audio-format mp3` when you want a file to keep.
-
-**If a URL 403s, your yt-dlp is stale.** YouTube changes its player constantly
-and yt-dlp patches roughly weekly, so an extractor a few months old fails with
-`HTTP Error 403: Forbidden` on the data download while metadata still resolves
-fine. That is not a stemscribe bug and no flag will fix it:
-
-```bash
-pip install -U yt-dlp     # first thing to try, every time
-```
-
-Treat yt-dlp as a rolling dependency, not a pinned one. `fetch.py` names the
-version in its 403 message so the next person doesn't have to bisect it.
-
-**YouTube also needs a JavaScript runtime** to decipher stream signatures.
-yt-dlp only enables `deno` by default, so a machine with `node` and no `deno`
-loses formats and 403s with only a warning to explain why. `fetch.py` detects
-whatever is on PATH (`deno`, `node`, `bun`, `quickjs`) and enables it. If you
-have none: `brew install deno`.
+The download keeps its own codec (`--audio-format mp3` for a file to keep);
+`prepare` decodes to wav before demucs either way. If a download fails with
+`HTTP Error 403`, update yt-dlp (`pip install -U yt-dlp`): sites change and
+yt-dlp keeps up roughly weekly. `fetch.py` names the version in its 403 message
+and enables whichever JavaScript runtime is on PATH (`deno`, `node`, `bun`,
+`quickjs`), which some sites need.
 
 Fetched audio lands in `out/source/` (`--no-keep-source` discards it), and the
-URL, title, uploader and duration go into `manifest.json` under `source`. That
-matters more than it looks: stemscribe hashes its input, but a hash tells you
-*which* file, never *whose*. Since rearranged is meant to ship commercially,
-being able to answer "where did this come from?" months later (for material
-that may be someone else's recording) is worth the two lines it costs. The same
-diligence that keeps MuScriptor's CC-BY-NC weights out of the commercial path
-applies to the audio going in.
+URL, title, uploader and duration go into `manifest.json` under `source`, so
+"where did this come from?" has an answer months later. A hash tells you
+*which* file, never *whose*.
 
 ### Web UI
 
@@ -166,7 +151,7 @@ stemscribe-web            # → http://127.0.0.1:8002
 ```
 
 Drop a file, watch progress stream, audition stems, download MIDI. The options
-show once there is a file or a link: parts, notes, tracks and the section to
+show once there is a file: parts, notes, tracks and the section to
 transcribe, with cleanup, tempo, time signature and the grid behind **More
 options**. Tempo is detected automatically and never asked about up front; if the
 grid looks wrong, the alternates are one click away and re-stamp instantly. The

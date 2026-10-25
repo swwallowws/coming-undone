@@ -41,8 +41,7 @@ export async function findLocal(bases, ms = 1500, fetchFn = fetch) {
 
 export function localFormData(input, opts) {
   const fd = new FormData();
-  if (input.file) fd.append("file", input.file);
-  else fd.append("url", input.url);
+  fd.append("file", input.file);   // the studio takes files only (a URL is the command line's)
   for (const [k, v] of Object.entries(opts)) {
     if (v === null || v === undefined || v === "") continue;
     fd.append(k, Array.isArray(v) ? v.join(",") : String(v));

@@ -177,10 +177,8 @@
         <span class="spacer"></span><button class="ds-button ghost small hidden" id="sel-clear">Whole song</button></div>
     </div>
     <input type="file" id="file" accept="audio/*,.mp3,.wav,.m4a,.flac,.aiff" class="hidden">
-    <div class="or" id="or"><span>Or paste a link</span></div>
-    <input type="text" id="url" class="ds-field" placeholder="https://www.youtube.com/watch?v=..." aria-label="Link to audio">
 
-    <!-- the options, once there is a file or a link: the everyday ones, the rest behind More options -->
+    <!-- the options, once there is a file: the everyday ones, the rest behind More options -->
     <div class="form-grid needs-source">
       <span class="label">Parts</span>
       <div><span class="choice ds-choice" data-for="model">
@@ -209,11 +207,6 @@
         <div class="hint" id="section-hint"></div>
       </div>
 
-      <span class="label link-only hidden">Link audio</span>
-      <div class="link-only hidden"><span class="choice ds-choice" data-for="audiofmt">
-          <button data-v="native">Original</button><button data-v="mp3">MP3, 192k</button></span>
-        <div class="hint">Original skips a second lossy encode</div></div>
-      <input type="hidden" id="audiofmt" value="native">
 
       <details class="more">
         <summary>More options</summary>
@@ -513,10 +506,6 @@ function selectEngine(id) {
   document.querySelectorAll("#engine-choice button").forEach(b => b.classList.toggle("on", b.dataset.engine === id));
   $("where-text").textContent = id === "local" ? WHERE.local() : id === "browser" ? WHERE.browser() : WHERE.online;
   setBackends(id === "local" ? localBackends : id === "browser" ? browserBackends : ONLINE_BACKENDS);
-  // links are fetched by the local server; online and in-browser runs take files
-  const online = id !== "local";
-  if (online && $("url").value.trim()) { $("url").value = ""; showLinkOnly(false); }
-  if (!file) { $("or").classList.toggle("hidden", online); $("url").classList.toggle("hidden", online); }
   $("section-hint").textContent = id === "online"
     ? `Online takes up to ${CONFIG.onlineMaxSeconds} s: the section you pick, or the first ${CONFIG.onlineMaxSeconds} s.` : "";
   showBudget();
@@ -665,9 +654,7 @@ let peaks = null, total = 0, sel = null;
 
 async function setFile(f) {
   file = f;
-  $("url").value = "";           // a file and a URL are alternatives
-  showLinkOnly(false);
-  drop.classList.add("hidden"); $("or").classList.add("hidden"); $("url").classList.add("hidden");
+  drop.classList.add("hidden");
   $("wave-box").classList.remove("hidden");
   $("fname").textContent = f.name;
   $("fmeta").textContent = ` ${(f.size / 1048576).toFixed(1)} MB · reading…`;
@@ -768,22 +755,10 @@ $("start").oninput = fromInputs;
 $("duration").oninput = fromInputs;
 $("vocals").addEventListener("change", showBudget);
 
-// ---- a link instead of a file
-function showLinkOnly(on) { document.querySelectorAll(".link-only").forEach(e => e.classList.toggle("hidden", !on)); }
-$("url").oninput = () => {
-  const has = !!$("url").value.trim();
-  if (has) { file = null; $("file").value = ""; }
-  showLinkOnly(has);
-  refresh();
-};
-
 function refresh() {
-  const u = $("url").value.trim();
-  const ok = !!file || /^https?:\/\/\S+$/i.test(u);
-  // the options show once there is something to split: a file, or a link being typed
-  document.body.toggleAttribute("data-source", !!file || !!u);
-  $("go").disabled = !ok;
-  $("go").textContent = (!file && u) ? "Fetch, split and write down" : "Split and write down";
+  // the options show once there is a file to split
+  document.body.toggleAttribute("data-source", !!file);
+  $("go").disabled = !file;
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const numOr = (id, d) => $(id).value === "" ? d : parseFloat($(id).value);
@@ -795,7 +770,6 @@ function collectOptions() {
   if ($("monobass").checked) mono.push("bass");
   if ($("monovocals").checked) mono.push("vocals");
   return {
-    audio_format: $("audiofmt").value,
     backend: $("backend").value,
     demucs_model: $("model").value,
     include_vocals_melody: $("vocals").checked,
@@ -827,8 +801,7 @@ function logLine(d) {
 }
 
 $("go").onclick = async () => {
-  const url = $("url").value.trim();
-  if (!file && !url) return;
+  if (!file) return;
   $("go").disabled = true;
   $("results").classList.add("hidden");
   $("err-panel").classList.add("hidden");
@@ -836,7 +809,7 @@ $("go").onclick = async () => {
   $("spin").classList.remove("hidden");
   $("log").textContent = "";
   try {
-    const run = await engines[engine].run({ file, url }, collectOptions(), logLine);
+    const run = await engines[engine].run({ file }, collectOptions(), logLine);
     if (params.has("debug")) window.__cuLastRun = run;    // for browser/verify
     render(run);
     $("spin").classList.add("hidden");

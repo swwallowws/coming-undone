@@ -34,7 +34,6 @@ from .. import grid as _grid
 from ..backends import BACKENDS, NONCOMMERCIAL_BACKENDS
 from ..cleanup import CleanupParams
 from ..core import _jsonable, process
-from ..fetch import is_url
 from ..prepare import PrepareParams
 
 STATIC = pathlib.Path(__file__).parent / "static"
@@ -246,7 +245,6 @@ def config() -> dict:
 @app.post("/api/jobs")
 async def create_job(
     file: UploadFile | None = None,
-    url: str = Form(""),
     audio_format: str = Form("native"),
     backend: str = Form("muscriptor"),
     demucs_model: str = Form("htdemucs"),
@@ -279,28 +277,19 @@ async def create_job(
     if downbeat is not None and not 1 <= downbeat <= bar.pulses:
         raise HTTPException(400, f"downbeat must be 1 to {bar.pulses}")
 
-    url = (url or "").strip()
-    has_file = file is not None and file.filename
-    if not has_file and not url:
-        raise HTTPException(400, "provide an audio file or a URL")
-    if has_file and url:
-        raise HTTPException(400, "provide either a file or a URL, not both")
-    if url and not is_url(url):
-        raise HTTPException(400, "that does not look like a URL")
+    # The studio takes files only. Fetching from a URL stays in the command line,
+    # for audio you have the rights to (README, "Audio from a URL").
+    if file is None or not file.filename:
+        raise HTTPException(400, "provide an audio file")
 
     jid = uuid.uuid4().hex[:12]
     jdir = JOBS_ROOT / jid
     (jdir / "in").mkdir(parents=True, exist_ok=True)
 
-    if has_file:
-        safe = pathlib.Path(file.filename or "input").name
-        audio: str | pathlib.Path = jdir / "in" / safe
-        with open(audio, "wb") as fh:
-            shutil.copyfileobj(file.file, fh)
-    else:
-        # process() fetches it -- so download progress streams like every other
-        # stage instead of blocking this request.
-        audio, safe = url, url
+    safe = pathlib.Path(file.filename or "input").name
+    audio = jdir / "in" / safe
+    with open(audio, "wb") as fh:
+        shutil.copyfileobj(file.file, fh)
 
     job = Job(id=jid, dir=jdir, name=safe)
     JOBS[jid] = job
