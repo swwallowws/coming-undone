@@ -406,6 +406,9 @@ const CONFIG = {
 };
 
 const $ = id => document.getElementById(id);
+// Served by stemscribe-web (localhost only, by design): only then does the page's own server
+// have /api/config and /browser-models/. On the public site, asking only logs 404s.
+const SERVED_LOCALLY = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 const STEM_ORDER = ["vocals", "drums", "bass", "other", "guitar", "piano"];
 const TRACK_COLOR = { melody: "var(--melody)", bass: "var(--bass)", comping: "var(--comping)" };
 let file = null;
@@ -469,7 +472,8 @@ async function lookForBrowser() {
   try {
     // this server's own models first (stemscribe-web --browser-models), then the public
     // repo; ?models= names one folder and nothing else
-    const bases = params.get("models") ? [CONFIG.browser.models] : [CONFIG.browser.models, CONFIG.publicModels];
+    const bases = params.get("models") ? [CONFIG.browser.models]
+      : SERVED_LOCALLY ? [CONFIG.browser.models, CONFIG.publicModels] : [CONFIG.publicModels];
     let m = null, base = null;
     for (const b of bases) {
       base = new URL(b, location.href).href;
@@ -556,14 +560,14 @@ function useLocal(found, prefer) {
 // Chrome asks before a public page may reach localhost. Only look on our own when that
 // is already allowed (or it is not a question here); otherwise wait for a click.
 async function localAccess() {
-  if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) return "granted";
+  if (SERVED_LOCALLY) return "granted";
   for (const name of ["local-network-access", "loopback-network"]) {
     try { return (await navigator.permissions.query({ name })).state; } catch (_) { /* unknown name */ }
   }
   return "granted";                        // browsers without the question just connect
 }
 async function lookForLocal(asked) {
-  const here = await findLocal([""], 1500);      // this page served by the local server itself
+  const here = SERVED_LOCALLY && await findLocal([""], 1500);   // this page served by the local server itself
   if (here) return useLocal(here, true);
   if (!asked) {
     const state = await localAccess();
