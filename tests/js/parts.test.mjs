@@ -97,7 +97,8 @@ await test("merging refuses files that count time differently", () => {
 await test("the status line speaks plainly and names parts as the lanes do", () => {
   assert.equal(P.statusLine({ stage: "transcribe", message: "transcribing vocals stem with muscriptor ..." }), "writing down the melody");
   assert.equal(P.statusLine({ stage: "transcribe", message: "cached other transcription (basic-pitch)" }), "writing down the comping");
-  assert.equal(P.statusLine({ stage: "separate", message: "separating with htdemucs ..." }), "taking the song apart");
+  assert.equal(P.statusLine({ stage: "separate", message: "separating with htdemucs ..." }), "separating the parts");
+  assert.equal(P.statusLine({ stage: "gpu", message: "" }), "separating the parts on a free GPU");
   assert.equal(P.statusLine({ stage: "grid", message: "tempo map, median 150.000 BPM" }), "lining the notes up with the beat");
   assert.equal(P.statusLine({ stage: "instrumental", message: "mixing instrumental ..." }), null);
   assert.equal(P.statusLine({ stage: "queue", message: "waiting in line: 2 ahead" }), "waiting in line: 2 ahead");

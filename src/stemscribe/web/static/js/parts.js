@@ -172,9 +172,9 @@ export function statusLine({ stage, message = "" }) {
     case "online": return message;
     case "upload": return "sending the file";
     case "queue": return message;
-    case "gpu": return "taking the song apart on a free GPU";
+    case "gpu": return "separating the parts on a free GPU";
     case "prepare": return "getting the audio ready";
-    case "separate": return "taking the song apart";
+    case "separate": return "separating the parts";
     case "download": case "models": return "fetching the models, kept for next time";
     case "drums": return "writing down the drums";
     case "transcribe": return stem ? `writing down the ${partOf(stem)}` : "writing down the notes";
