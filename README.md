@@ -154,8 +154,22 @@ Drop a file and it becomes its waveform. Play it there before anything runs: a
 click moves the playhead, a drag picks a section, and Play then plays just that
 section (the split takes the same one). The studio asks two things: how many
 parts (4 or 6) and which notes (the transcriber). Everything else runs on its
-defaults; cleanup, tempo, time signature and the grid are tuned from the command
-line.
+defaults, which suit most songs.
+
+To fine-tune a run, use the command line (see [Use](#use)):
+
+| To change | Flags | More in |
+|---|---|---|
+| The note cleanup | `--no-cleanup`, `--max-duration-beats`, `--velocity-floor`, `--no-de-overlap`, `--legato` | [Cleanup](#cleanup), [Legato](#legato-the-opposite-problem) |
+| One note at a time for a part | `--mono bass` (or `vocals`, comma-separated) | [Cleanup](#cleanup) |
+| Leave the singing out | `--no-vocals-melody` | [Use](#use) |
+| The tempo | `--tempo`, `--tempo-mode` | [Tempo](#tempo), [Tempo map](#tempo-map-live-bands-that-drift) |
+| The time signature and bar one | `--meter`, `--downbeat` | [Beat grid](#beat-grid) |
+| The grid itself | `--snap`, `--no-grid` | [Beat grid](#beat-grid) |
+| The section and the silence trim | `--start`, `--duration`, `--no-trim-silence` | [Input conditioning](#input-conditioning) |
+
+In the studio, half or double time and moving bar one stay one click away after a
+run, by the player.
 
 While it works, the page says what it is doing in one plain line, Coming Undone's
 lamp plays underneath (move over it, click it), and each part's lane appears as
