@@ -453,6 +453,12 @@ def test_page_names_parts_from_one_source(client):
     assert "<audio" not in page and "notePlayer(" in page
 
 
+def test_page_draws_no_lane_for_an_empty_part(client):
+    # the browser engine returns empty parts too; they get no lane and stay out of the download
+    page = client.get("/").text
+    assert "run.parts.parts.filter(p => p.notes.length)" in page and "if (d.part.notes.length)" in page
+
+
 def test_page_shows_in_your_browser_only_once_it_can_run(client):
     page = client.get("/").text
     # hidden until its models answer; never a "later" placeholder

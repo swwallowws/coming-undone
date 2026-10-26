@@ -857,7 +857,7 @@ async function playParts(on) {
 
 // ---- the run
 function logLine(d) {
-  if (d.stage === "part" && d.part) { lane(d.part); drawParts(); return; }
+  if (d.stage === "part" && d.part) { if (d.part.notes.length) { lane(d.part); drawParts(); } return; }
   const line = document.createElement("div");
   line.innerHTML = `<span>${esc(d.stage)}</span><span>${esc(d.message)}</span>`;
   $("log").appendChild(line);
@@ -966,10 +966,12 @@ function render(run) {
   $("run-title").textContent = "Parts";
   $("status").textContent = "";
 
-  // the finished parts replace the first takes; a part that came to nothing goes
-  const final = new Set(run.parts.parts.map(p => p.name));
+  // the finished parts replace the first takes; a part that came to nothing goes (the
+  // browser engine hands back empty parts too: no lane, and nothing to download)
+  const written = run.parts.parts.filter(p => p.notes.length);
+  const final = new Set(written.map(p => p.name));
   for (const l of [...lanes]) if (!final.has(l.name)) { l.label.remove(); l.canvas.remove(); lanes.splice(lanes.indexOf(l), 1); }
-  for (const p of run.parts.parts) lane(p);
+  for (const p of written) lane(p);
   // a section's MIDI keeps the original file's timeline: the lanes start at the section
   span = [(res.prepared || {}).offset || 0, Math.max(run.parts.end, ((res.prepared || {}).offset || 0) + 1)];
   player.stop(span[0]);
