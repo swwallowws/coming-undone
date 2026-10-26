@@ -75,13 +75,14 @@ export function notePlayer({ onEnd } = {}) {
     synth.noteOff(ch, pitch, { time: at + len });
   }
 
+  // every part is queued, on or off: a part that is off only has its channel muted, so
+  // switching it back on sounds within the same beat instead of after the lookahead
   function schedule() {
     if (!playing) return;
     const now = songTime();
     if (now >= to) { stop(to); pos = from; onEnd?.(); return; }
     const a = Math.max(scheduledTo, now), b = now + LOOKAHEAD;
     for (const p of parts) {
-      if (!p.on) continue;
       for (const n of p.notes) if (n[1] >= a && n[1] < b) note(p, n, t0 + (n[1] - pos));
     }
     scheduledTo = Math.max(scheduledTo, b);
@@ -97,6 +98,8 @@ export function notePlayer({ onEnd } = {}) {
   }
 
   return {
+    /** for checks (?debug): the context and the output, to measure what sounds */
+    debug: () => ({ ctx, out }),
     /** the parts: [{ name, drum, notes: [[pitch, start, end, velocity]], on }] */
     setParts(list) { parts = list; assign(); },
     setSpan(a, b) { from = a; to = b; pos = Math.max(a, Math.min(pos, b)); },
@@ -107,6 +110,7 @@ export function notePlayer({ onEnd } = {}) {
       const me = ++my;
       await load();
       if (me !== my) return false;                   // stopped while the sounds loaded
+      this.refresh();                                // the parts already off stay silent
       pos = at >= to - 0.05 ? from : Math.max(from, at);
       t0 = ctx.currentTime + 0.05;
       scheduledTo = pos;
@@ -125,7 +129,11 @@ export function notePlayer({ onEnd } = {}) {
       t0 = until;
       scheduledTo = at;
     },
-    /** a part was switched on or off: what is queued already fades, the rest follows */
-    refresh() { if (playing) hush(); },
+    /** a part was switched on or off: only its channel mutes or sounds again, so the rest
+     *  plays on without a break (notes already queued for it are silenced by the mute) */
+    refresh() {
+      if (!synth) return;
+      for (const p of parts) synth.midiChannels[channel[p.name]]?.setSystemParameter("isMuted", !p.on);
+    },
   };
 }

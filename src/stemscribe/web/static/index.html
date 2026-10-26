@@ -747,6 +747,7 @@ function stopLamp() {
 // name is its switch: on, it plays and goes in the download.
 let lanes = [], span = [0, 1], running = false;
 const player = notePlayer({ onEnd: () => plPlay.setPressed(false) });
+if (params.has("debug")) window.__cuPlayer = player;      // for scratch checks of what sounds
 
 function lane(part) {
   let l = lanes.find(x => x.name === part.name);
