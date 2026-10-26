@@ -150,13 +150,27 @@ URL, title, uploader and duration go into `manifest.json` under `source`, so
 stemscribe-web            # → http://127.0.0.1:8002
 ```
 
-Drop a file, watch progress stream, audition stems, download MIDI. The options
-show once there is a file: parts, notes, tracks and the section to
-transcribe, with cleanup, tempo, time signature and the grid behind **More
-options**. Tempo is detected automatically and never asked about up front; if the
-grid looks wrong, the alternates are one click away and re-stamp instantly. The
-footer says where the run happens and holds the "Get in touch" form every studio
-shares.
+Drop a file and it becomes its waveform. Play it there before anything runs: a
+click moves the playhead, a drag picks a section, and Play then plays just that
+section (the split takes the same one). The studio asks two things: how many
+parts (4 or 6) and which notes (the transcriber). Everything else runs on its
+defaults; cleanup, tempo, time signature and the grid are tuned from the command
+line.
+
+While it works, the page says what it is doing in one plain line, Coming Undone's
+lamp plays underneath (move over it, click it), and each part's lane appears as
+its notes are written down. When it is done, the same lanes are the result:
+melody, comping, bass and drums (plus guitar and piano with 6 parts), top to
+bottom, each in its own colour. Play plays the MIDI itself on the shared General
+MIDI soundfont. A part's name is its switch: on, it plays and goes in the
+download; the one download button says which parts it takes, and nothing
+downloads until it is pressed. The tempo and meter sit by the player; a click
+opens half or double time and moving bar one, both instant. What the run said is
+under **Details**.
+
+The footer holds the **Engine** switch next to the line that explains it,
+**Models** (the models behind every engine and their licences) and the "Get in
+touch" form every studio shares.
 
 It is **localhost-only by design**: no auth, runs jobs on your machine, reads
 and writes your files. Don't expose it.

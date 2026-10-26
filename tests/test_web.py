@@ -89,6 +89,24 @@ def test_events_replay_each_event_exactly_once(client, tmp_path):
     ]
 
 
+def test_events_carry_each_part_as_it_lands(client, tmp_path):
+    job = make_job(tmp_path)
+    job.emit("transcribe", "transcribing bass stem ...")
+    job.emit_part("bass", False, [[40, 31.0, 31.5, 80]])
+    job.emit("done", "finished")
+    job.status = "done"
+    with client.stream("GET", "/api/jobs/j1/events") as r:
+        body = "".join(r.iter_text())
+    msgs = [json.loads(l[6:]) for l in body.splitlines() if l.startswith("data: ")]
+    part = next(m for m in msgs if m["stage"] == "part")
+    assert part["part"] == {"name": "bass", "drum": False, "notes": [[40, 31.0, 31.5, 80]]}
+
+
+def test_a_job_hands_its_parts_to_the_stream(client, tmp_path, monkeypatch):
+    r, seen = _post_job(client, tmp_path, monkeypatch)
+    assert r.status_code == 200 and callable(seen["on_part"])
+
+
 def test_events_terminate_on_error(client, tmp_path):
     job = make_job(tmp_path)
     job.emit("error", "BackendError: boom")
@@ -233,10 +251,13 @@ def test_job_rejects_a_bad_meter(client, tmp_path, monkeypatch):
     assert r.status_code == 400 and "meter" in r.json()["detail"] and not seen
 
 
-def test_page_offers_the_meters(client):
+def test_page_leaves_fine_tuning_to_the_command_line(client):
+    # the meter, tempo, grid, cleanup and track options stay in the API and the CLI;
+    # the studio asks only for the parts and the notes before a run
     page = client.get("/").text
-    for v in ("4/4", "3/4", "6/8", "9/8:2+2+2+3", "12/8"):
-        assert f'data-v="{v}"' in page
+    for gone in ('data-v="3/4"', 'id="cleanup"', 'id="monobass"', 'id="snap"', 'id="downbeat"', '<details class="more">'):
+        assert gone not in page, gone
+    assert 'data-for="model"' in page and 'id="backend-choice"' in page
 
 
 def test_roll_lists_each_tracks_pitched_notes(client, tmp_path):
@@ -392,22 +413,59 @@ def test_page_has_the_runs_switch_and_one_config(client):
 def test_page_shares_the_studio_header_and_the_design_controls(client):
     page = client.get("/").text
     assert 'href="./vendor/design/controls.css"' in page
-    # the design's header, as in every product: the wordmark alone (no tagline), the Engine
-    # switch at its end, a bar under it saying where
+    # the design's header, as in every product: the wordmark alone (no tagline) and the
+    # colour mode switch every product shares at its end, the saved mode before paint
     header = page.split('<header class="ds-header">', 1)[1].split("</header>", 1)[0]
     assert 'class="ds-wordmark"' in header and "simply" not in header
-    assert "Engine:" in header and 'id="engine-choice"' in header and "Runs:" not in page
-    # the colour mode switch every product shares, at the header's end, and the saved mode before paint
-    assert header.rstrip().endswith('<div id="modes" class="modes"></div>')
+    assert header.rstrip().endswith('<div id="modes" class="modes end"></div>')
     assert 'localStorage.getItem("swwallowws:mode")' in page and "themeSwitch($(\"modes\")" in page
-    # one footer line, as in the other studios: where the run happens, and the shared Get in touch form
+    # the footer, as in the other studios: the Engine switch beside the line that explains
+    # it, then Models (Ready Set's Sources disclosure) and the shared Get in touch form
     foot = page.split('<footer class="cu-foot ds-footer">', 1)[1].split("</footer>", 1)[0]
+    assert "Engine:" in foot and 'id="engine-choice"' in foot and "Engine:" not in header and "Runs:" not in page
     assert 'id="where-text"' in foot and 'id="contact"' in foot and "contactForm($(\"contact\")" in page
-    for c in ('class="choice ds-choice', 'class="chip ds-check', 'class="ds-drop"', 'class="ds-button primary"', 'class="ds-label"'):
+    assert 'id="srcs-btn"' in foot and ">Models</button>" in foot and "ADT_STR" in foot
+    for c in ('class="choice ds-choice', 'class="ds-drop"', 'class="ds-button primary"', 'class="ds-label"'):
         assert c in page, c
-    # the options wait for a file or a link; the rarer ones fold behind More options
-    assert 'class="form-grid needs-source"' in page and '<details class="more">' in page
+    # the two questions wait for a file
+    assert 'class="form-grid needs-source"' in page
     assert "background: var(--ink); color: var(--ground)" not in page   # the chosen option is the accent
+
+
+def test_page_downloads_only_when_asked(client):
+    import re
+    page = client.get("/").text
+    # no link downloads or opens a file: no download attribute, no file href written in
+    assert not re.search(r"<a[^>]*\sdownload[\s>=]", page) and "a.download" not in page
+    assert not re.search(r'href="\$\{[^}]*(?:url|partUrl)\(', page)
+    # one download: a button with the download icon, saying which parts it takes, saved
+    # through parts.js only when pressed
+    assert page.count('iconSvg("download")') == 1 and page.count("saveBytes(") == 1
+    assert '$("dl").onclick' in page and "downloadLabel(on, all)" in page
+    assert 'from "./js/parts.js"' in page and client.get("/js/parts.js").status_code == 200
+
+
+def test_page_names_parts_from_one_source(client):
+    page = client.get("/").text
+    # the lanes take their names, order and colours from parts.js only; no stem audio
+    assert "STEM_ORDER" not in page and "PART_ORDER" not in page and "pl-stems" not in page
+    assert "byPart(" in page and "partLabel(" in page and "partToken(" in page
+    assert "<audio" not in page and "notePlayer(" in page
+
+
+def test_page_shows_the_parts_as_they_come_with_the_lamp(client):
+    page = client.get("/").text
+    assert '>Coming undone</h2>' in page and 'd.stage === "part"' in page
+    assert "mountCard(" in page and client.get("/js/lamp/engine.js").status_code == 200
+    assert "statusLine(d)" in page and "spin" not in page            # one plain line, no blinking light
+    assert '<details class="fold" id="run-details">' in page         # the technical log on demand
+
+
+def test_page_plays_the_file_before_the_split(client):
+    page = client.get("/").text
+    wave = page.split('<div id="wave-box"', 1)[1].split("</div>\n    <input", 1)[0]
+    assert 'id="wave-play"' in wave and 'data-icon="play"' in wave and 'class="playhead"' in wave
+    assert "./vendor/design/playhead.css" in page
 
 
 def test_page_online_limit_matches_the_space():

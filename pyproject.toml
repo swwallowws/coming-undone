@@ -40,7 +40,7 @@ stemscribe-grid = "stemscribe.cli:grid_main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"stemscribe.web" = ["static/*", "static/js/*", "static/favicons/*", "static/vendor/design/*", "static/vendor/design/fonts/*",
+"stemscribe.web" = ["static/*", "static/js/*", "static/js/lamp/*", "static/favicons/*", "static/vendor/design/*", "static/vendor/design/fonts/*",
                     "static/vendor/gradio-client/*", "static/vendor/browser-engine/*",
                     "static/vendor/browser-engine/basic-pitch/*", "static/vendor/design/sound/*",
                     "static/vendor/design/sound/spessasynth/*"]

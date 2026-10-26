@@ -65,6 +65,12 @@ async function run(cfg, input, opts = {}, on = () => {}) {
   const lap = (k, t) => { timings[k] = +((performance.now() - t) / 1000).toFixed(2); };
   const warnings = [];
   const say = (stage, message) => on({ stage, message });
+  // one part's first notes as they land (the server's "part" event): [pitch, start, end, velocity]
+  // on the original file's timeline, before cleanup
+  let offset = 0;
+  const part = (name, drum, notes) => on({ stage: "part", message: name, part: { name, drum,
+    notes: notes.map((n) => [n.pitch, Math.round((n.start + offset) * 1e4) / 1e4, Math.round((n.end + offset) * 1e4) / 1e4, Math.round(n.velocity)])
+      .sort((a, b) => a[1] - b[1] || a[0] - b[0]) } });
 
   // --- engine ---------------------------------------------------------------
   const env = await probe();
@@ -89,6 +95,7 @@ async function run(cfg, input, opts = {}, on = () => {}) {
   const prep = prepare(audio, { start: opts.start, duration: opts.duration, trimSilence: opts.trim_silence !== false });
   audio = null;
   lap("prepare", t);
+  offset = prep.info.offset || 0;
   const seconds = prep.left.length / SR;
   if (seconds < 1) throw new BrowserEngineError("input", "That is under a second of audio after the section and trim.");
 
@@ -145,6 +152,7 @@ async function run(cfg, input, opts = {}, on = () => {}) {
   const hits = await transcribeDrums(ort, enc, dec, drumWave, { onChunk: (i, n) => say("drums", `${i} of ${n} chunks`) });
   try { await enc.release(); await dec.release(); } catch (_) { /* released */ }
   lap("drums", t);
+  part("drums", true, hits.map((h) => ({ pitch: h.pitch, start: h.time, end: h.time + 0.1, velocity: h.velocity })));
 
   // --- 3. tempo ---------------------------------------------------------------
   t = performance.now();
@@ -204,6 +212,7 @@ async function run(cfg, input, opts = {}, on = () => {}) {
         onChunk: (i, n) => say("transcribe", `${stem}: ${i} of ${n} chunks`),
       });
       raw[stem] = out.notes.map((n) => ({ pitch: n.pitch, start: n.onset, end: n.offset, velocity: 100 }));
+      part(TRACK_SPEC[stem][0], false, raw[stem]);
     }
     try { await cond.release(); await lm.release(); } catch (_) { /* released */ }
     // backends.is_sparse: a stem with sound but under one note per 4 bars came out
@@ -216,12 +225,14 @@ async function run(cfg, input, opts = {}, on = () => {}) {
         say("transcribe", `transcribing ${stem} again with basic-pitch`);
         raw[stem] = await basicPitch(stem);
         fallbacks[stem] = "basic-pitch";
+        part(TRACK_SPEC[stem][0], false, raw[stem]);
       }
     }
   } else {
     for (const stem of wanted) {
       say("transcribe", `transcribing ${stem} with basic-pitch`);
       raw[stem] = await basicPitch(stem);
+      part(TRACK_SPEC[stem][0], false, raw[stem]);
     }
   }
   if (bp) { try { (await bp.model).dispose(); } catch (_) { /* gone */ } }

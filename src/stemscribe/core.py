@@ -126,7 +126,8 @@ def plan_stems(stem_names, include_vocals_melody: bool,
     return wanted, drum_jobs, skipped
 
 
-def gpu_stage(job: dict, progress: Callable[[str, str], None] | None = None) -> dict:
+def gpu_stage(job: dict, progress: Callable[[str, str], None] | None = None,
+              on_midi: Callable[[str, str], None] | None = None) -> dict:
     """The part of a run that wants a GPU: demucs, then the first transcription pass
     of each stem (the pitched backend, and the drum backend on the drums).
 
@@ -145,6 +146,9 @@ def gpu_stage(job: dict, progress: Callable[[str, str], None] | None = None) -> 
 
     Returns {"stems", "midis", "drum_midis" ({stem: path or None}), "drum_errors"
     ({stem: message}; a failing drum model never sinks the run), "timings"}.
+
+    on_midi(stem, path) runs as each stem's raw MIDI is written, so a UI can show the
+    parts as they come.
     """
     emit = progress or (lambda stage, msg: None)
     t0 = time.perf_counter()
@@ -168,6 +172,8 @@ def gpu_stage(job: dict, progress: Callable[[str, str], None] | None = None) -> 
             return str(dst)
         emit("transcribe", f"transcribing {stem} stem with {name} ...")
         mid = fn(pathlib.Path(stems[stem]), dst, **kwargs)
+        if mid and on_midi:
+            on_midi(stem, str(mid))
         return str(mid) if mid else None
 
     midis: dict[str, str | None] = {}
@@ -216,6 +222,7 @@ def process(
     meter: "str | _grid.Meter" = "4/4",
     tempo_mode: str = "auto",
     gpu: Callable[[dict], dict] | None = None,
+    on_part: Callable[[str, bool, list], None] | None = None,
 ) -> Result:
     """Audio in, stems + labeled multi-track MIDI out.
 
@@ -244,6 +251,10 @@ def process(
     map that follows a drifting band; "constant" or "map" force one or the other.
     gpu: runs gpu_stage's job somewhere else and returns its result, e.g. inside a
     ZeroGPU function on the Hugging Face Space. None (default) runs it here.
+    on_part: optional callback(track name, is drum, notes) as each stem's first
+    transcription lands, before cleanup and the grid, for a UI to draw the parts as
+    they come. notes are [pitch, start, end, velocity] on the original file's
+    timeline. A stem transcribed again (the fallback) calls it again.
     """
     if tempo_mode not in _grid.TEMPO_MODES:
         raise ValueError(f"tempo_mode must be one of {', '.join(_grid.TEMPO_MODES)}, got {tempo_mode!r}")
@@ -353,6 +364,20 @@ def process(
                 "MIDI will be shifted back to match",
             )
 
+        def _part(stem: str, mid) -> None:
+            """Hand one stem's raw notes to on_part; a UI's trouble never sinks the run."""
+            if not on_part or not mid:
+                return
+            try:
+                pm = pretty_midi.PrettyMIDI(str(mid))
+                off = prepared.offset or 0.0
+                notes = sorted(([n.pitch, round(n.start + off, 4), round(n.end + off, 4), n.velocity]
+                                for inst in pm.instruments for n in inst.notes),
+                               key=lambda x: (x[1], x[0]))
+                on_part(_merge.track_for_stem(stem)[0], stem in _merge.DRUM_STEMS, notes)
+            except Exception as e:  # noqa: BLE001
+                log.warning("on_part failed for %r: %s", stem, e)
+
         # --- 1. separate, and the first transcription pass -----------------
         # Separation is 87% of the runtime, and a pure function of (audio bytes,
         # model); the raw transcriptions are pure functions of the same. Both are
@@ -385,6 +410,8 @@ def process(
                 shutil.copy2(mhit / "out.mid", raw_dir / f"{stem}.mid")
                 cached_midis.append(stem)
                 _emit("transcribe", f"cached {stem} transcription ({name})")
+                if stem != "vocals" or include_vocals_melody:
+                    _part(stem, raw_dir / f"{stem}.mid")
 
         job = {
             "audio": str(prepared.path),
@@ -402,7 +429,7 @@ def process(
             "pitched": gpu is None or backend in _backends.GPU_BACKENDS,
         }
         t0 = time.perf_counter()
-        got = gpu(job) if gpu else gpu_stage(job, progress=_emit)
+        got = gpu(job) if gpu else gpu_stage(job, progress=_emit, on_midi=_part)
         if gpu:
             # the whole call, waiting for a GPU included: what the visitor waited
             timings["gpu_call"] = round(time.perf_counter() - t0, 2)
@@ -489,6 +516,7 @@ def process(
             if hit and (hit / "out.mid").exists():
                 shutil.copy2(hit / "out.mid", dst)
                 _emit("transcribe", f"cached {stem} transcription ({name})")
+                _part(stem, dst)
                 return dst
             _emit("transcribe", f"transcribing {stem} stem with {name} ...")
             mid = fn(stem_paths[stem], dst, **kwargs)
@@ -501,6 +529,7 @@ def process(
                 w = cch.begin("midi", mkey)
                 shutil.copy2(mid, w.path / "out.mid")
                 w.commit({"stem": stem, "backend": name})
+            _part(stem, mid)
             return mid
 
         stem_midis: dict[str, pathlib.Path] = {}

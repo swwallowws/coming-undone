@@ -88,6 +88,27 @@ def test_grid_drums_and_fallback_land_in_the_midi_and_manifest(run):
     assert m["grid"]["tracks"]["drums"]["latency_ms"] == pytest.approx(-52, abs=5)
 
 
+def test_each_part_is_handed_on_as_it_lands_on_the_original_timeline(run):
+    got = []
+    run(prepare=core.PrepareParams(trim_silence=False, start=5.0, duration=20.0),
+        on_part=lambda name, drum, notes: got.append((name, drum, notes)))
+    names = [g[0] for g in got]
+    # comping and bass from the main backend, drums, then bass again from the fallback
+    assert set(names) == {"comping", "bass", "drums"} and names.count("bass") == 2
+    drums = next(g for g in got if g[0] == "drums")
+    assert drums[1] is True and all(not g[1] for g in got if g[0] != "drums")
+    comping = next(g[2] for g in got if g[0] == "comping")
+    # the section starts 5 s in: the notes are shifted back onto the file's timeline
+    assert comping[0][1] == pytest.approx(5.0 + 0.5 + 0.012, abs=1e-3)
+    assert all(len(n) == 4 for n in comping) and comping == sorted(comping, key=lambda n: (n[1], n[0]))
+
+
+def test_a_failing_part_callback_never_sinks_the_run(run):
+    def boom(*_):
+        raise RuntimeError("the page went away")
+    assert run(on_part=boom).midi_path.exists()
+
+
 def test_a_failing_drum_model_warns_and_the_run_goes_on(run, monkeypatch):
     def broken(stem_wav, out_mid, **_):
         raise backends.BackendError("ADT_STR needs its model's requirements")

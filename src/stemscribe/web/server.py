@@ -112,10 +112,14 @@ class Job:
     #: the start and a live one blocks -- with no event delivered twice.
     cv: threading.Condition = field(default_factory=threading.Condition)
 
-    def emit(self, stage: str, message: str) -> None:
+    def emit(self, stage: str, message: str, **extra: Any) -> None:
         with self.cv:
-            self.log.append({"stage": stage, "message": message})
+            self.log.append({"stage": stage, "message": message, **extra})
             self.cv.notify_all()
+
+    def emit_part(self, name: str, drum: bool, notes: list) -> None:
+        """One part's first notes, as they land: the page draws its lane before the run ends."""
+        self.emit("part", name, part={"name": name, "drum": drum, "notes": notes})
 
     def finished(self) -> bool:
         return self.status in ("done", "error")
@@ -161,6 +165,7 @@ def _run(job: Job, audio: pathlib.Path, opts: dict) -> None:
             keep_stems=True,
             instrumental=True,
             progress=job.emit,
+            on_part=job.emit_part,
         )
         job.result = _payload(job, res)
         # Emit before flipping status: a stream exits once status is terminal,
