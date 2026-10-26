@@ -453,6 +453,14 @@ def test_page_names_parts_from_one_source(client):
     assert "<audio" not in page and "notePlayer(" in page
 
 
+def test_page_shows_in_your_browser_only_once_it_can_run(client):
+    page = client.get("/").text
+    # hidden until its models answer; never a "later" placeholder
+    assert '<button data-engine="browser" class="hidden">In your browser</button>' in page
+    assert "later</span>" not in page and "coming later" not in page
+    assert "requestAdapter(), new Promise" in page                  # a hanging WebGPU probe gives up
+
+
 def test_page_shows_the_parts_as_they_come_with_the_lamp(client):
     page = client.get("/").text
     assert '>Coming undone</h2>' in page and 'd.stage === "part"' in page
