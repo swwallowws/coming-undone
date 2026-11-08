@@ -21,7 +21,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # What a pull request touched, so the tests (torch alone takes minutes) and the link check run
+  # only when their part changed. The site stages in seconds and runs every time. On main every
+  # job runs, since the deploy needs them all.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ github.event_name != 'pull_request' || steps.code.outputs.code == 'true' }}
+      readme: ${{ github.event_name != 'pull_request' || steps.parts.outputs.readme == 'true' }}
+    steps:
+      # Any file but pictures, docs and the top-level notes (README.md, SPEC.md...): the tests
+      # read across src/, browser/, space/ and scripts/.
+      - id: code
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!media/**'
+              - '!docs/**'
+              - '!*.md'
+      - id: parts
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            readme:
+              - 'README.md'
+              - 'deploy/README.md'
+              - 'media/**'
+              - '.github/workflows/ci.yml'
+
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +76,8 @@ jobs:
       - run: pytest -q
 
   readme:
+    needs: changes
+    if: needs.changes.outputs.readme == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
